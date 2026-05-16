@@ -1,0 +1,67 @@
+export const fakeAds = [
+  {
+    title: "Timeline+ Premium",
+    sponsor: "Presented by Unnecessary Subscriptions LLC",
+    body: "Unlock unlimited contradictions, premium plot holes, and priority access to morally questionable headcanon.",
+    bulletPoints: [
+      "Unlimited cross-franchise crimes",
+      "Advanced Retcon Storage",
+      "Remove 0 ads for only $8.99/month",
+    ],
+    cta: "Start Fake Trial",
+    tinyDisclaimer: "Trial auto-renews in an alternate universe.",
+    badge: "Subscription Parasite",
+  },
+  {
+    title: "Questionable Science™",
+    sponsor: "Ethics Optional Since 1998",
+    body: "Tired of plot holes? Fill them with glowing liquid and corporate denial.",
+    bulletPoints: [
+      "Now with 40% more containment breaches",
+      "Trusted by labs with bad lighting",
+      "Side effects include zombies, fungus, and lawsuits",
+    ],
+    cta: "Buy Suspicious Serum",
+    tinyDisclaimer: "Not responsible for becoming canon.",
+    badge: "Definitely Safe",
+  },
+  {
+    title: "Canon Insurance",
+    sponsor: "OrbCare+",
+    body: "Protect your theories from future contradictions, friend objections, and DLC that ruins everything.",
+    bulletPoints: [
+      "Covers minor retcons",
+      "Premium plan covers time travel",
+      "Friend disputes require separate deductible",
+    ],
+    cta: "Insure This Nonsense",
+    tinyDisclaimer: "Claims may be denied due to vibes.",
+    badge: "Legal-ish",
+  },
+  {
+    title: "Friend Patience Booster",
+    sponsor: "Definitely Not A Scam",
+    body: "Is your friend sighing while you explain lore? Try patented Patience Booster patches.",
+    bulletPoints: [
+      "Reduces 'bro what' by up to 12%",
+      "May cause temporary agreement",
+      "Works best when he is eating",
+    ],
+    cta: "Patch The Friend",
+    tinyDisclaimer: "Results not observed in testing.",
+    badge: "Untested",
+  },
+  {
+    title: "Plot Hole Spackle",
+    sponsor: "For When Writing Fails",
+    body: "A thick, premium paste used to cover bad explanations, missing cutscenes, and aggressive timeline crimes.",
+    bulletPoints: [
+      "Applies directly to canon",
+      "Paintable after one retcon",
+      "Now in Time Travel Gray",
+    ],
+    cta: "Fill The Hole",
+    tinyDisclaimer: "Do not inhale near lore goblins.",
+    badge: "Contractor Grade",
+  },
+];
