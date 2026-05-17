@@ -5,6 +5,7 @@ import BrokenMediaPlaceholder from "./BrokenMediaPlaceholder";
 import FloatingWindow from "./FloatingWindow";
 import MediaLightbox from "./MediaLightbox";
 import { fallbackTagStyle, tagStyles } from "../data/tagStyles";
+import { getEventAccentColor } from "../utils/colorUtils";
 import { cx } from "../utils/helpers";
 import { formatFileSize, getMediaUrl, isImageMedia, isVideoMedia } from "../utils/mediaUtils";
 
@@ -58,6 +59,7 @@ export default function DisasterDetailWindow({
   onEdit,
   onDelete,
   onOpenNodeWeb,
+  canEdit = true,
 }) {
   const [lightboxIndex, setLightboxIndex] = useState(null);
 
@@ -65,6 +67,7 @@ export default function DisasterDetailWindow({
 
   const media = Array.isArray(disaster.media) ? disaster.media : [];
   const hasConnections = disaster.directConnections?.length > 0;
+  const accentColor = getEventAccentColor(disaster);
 
   function handleEdit() {
     onClose();
@@ -92,6 +95,7 @@ export default function DisasterDetailWindow({
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.28em] text-red-100">Year {disaster.year}</p>
+            <div className="mt-2 h-1 w-28 rounded-full" style={{ backgroundColor: accentColor, boxShadow: `0 0 18px ${accentColor}66` }} />
             <h2 className="mt-1 text-3xl font-black leading-tight text-white">{disaster.title}</h2>
           </div>
           <div className="flex flex-wrap gap-2 lg:justify-end">
@@ -167,22 +171,30 @@ export default function DisasterDetailWindow({
         ) : null}
 
         <div className="flex flex-col gap-3 border-t border-white/10 pt-4 sm:flex-row sm:flex-wrap">
-          <button
-            type="button"
-            onClick={handleEdit}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-sky-300/30 bg-sky-500/15 px-4 py-3 text-sm font-black text-sky-50 transition hover:bg-sky-500/25 focus:outline-none focus:ring-4 focus:ring-sky-300/25"
-          >
-            <Pencil className="h-4 w-4" aria-hidden="true" />
-            Edit Disaster
-          </button>
-          <button
-            type="button"
-            onClick={handleDelete}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-300/30 bg-red-500/15 px-4 py-3 text-sm font-black text-red-50 transition hover:bg-red-500/25 focus:outline-none focus:ring-4 focus:ring-red-300/25"
-          >
-            <Trash2 className="h-4 w-4" aria-hidden="true" />
-            Delete Disaster
-          </button>
+          {canEdit ? (
+            <>
+              <button
+                type="button"
+                onClick={handleEdit}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-sky-300/30 bg-sky-500/15 px-4 py-3 text-sm font-black text-sky-50 transition hover:bg-sky-500/25 focus:outline-none focus:ring-4 focus:ring-sky-300/25"
+              >
+                <Pencil className="h-4 w-4" aria-hidden="true" />
+                Edit Disaster
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-red-300/30 bg-red-500/15 px-4 py-3 text-sm font-black text-red-50 transition hover:bg-red-500/25 focus:outline-none focus:ring-4 focus:ring-red-300/25"
+              >
+                <Trash2 className="h-4 w-4" aria-hidden="true" />
+                Delete Disaster
+              </button>
+            </>
+          ) : (
+            <span className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-yellow-200/25 bg-yellow-300/10 px-4 py-3 text-sm font-black text-yellow-50">
+              View-only until fake credentials stop being fake enough.
+            </span>
+          )}
           {hasConnections ? (
             <button
               type="button"

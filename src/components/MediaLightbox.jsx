@@ -1,12 +1,13 @@
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import BrokenMediaPlaceholder from "./BrokenMediaPlaceholder";
 import { formatFileSize, getMediaUrl, isImageMedia, isVideoMedia } from "../utils/mediaUtils";
 
 export default function MediaLightbox({ mediaItems, initialIndex = 0, onClose }) {
   const [index, setIndex] = useState(initialIndex);
   const [failed, setFailed] = useState(false);
+  const swipeStart = useRef(null);
   const media = mediaItems[index];
   const mediaUrl = getMediaUrl(media);
   const hasMultiple = mediaItems.length > 1;
@@ -30,6 +31,24 @@ export default function MediaLightbox({ mediaItems, initialIndex = 0, onClose })
 
   if (!media) return null;
 
+  function goNext() {
+    setIndex((current) => (current + 1) % mediaItems.length);
+  }
+
+  function goPrevious() {
+    setIndex((current) => (current - 1 + mediaItems.length) % mediaItems.length);
+  }
+
+  function handlePointerUp(event) {
+    if (!swipeStart.current || !hasMultiple) return;
+    const deltaX = event.clientX - swipeStart.current.x;
+    const deltaY = event.clientY - swipeStart.current.y;
+    swipeStart.current = null;
+    if (Math.abs(deltaX) < 60 || Math.abs(deltaX) < Math.abs(deltaY) * 1.2) return;
+    if (deltaX < 0) goNext();
+    else goPrevious();
+  }
+
   return (
     <motion.div
       className="fixed inset-0 z-[92] flex items-center justify-center bg-black/86 p-4 backdrop-blur-md"
@@ -47,6 +66,10 @@ export default function MediaLightbox({ mediaItems, initialIndex = 0, onClose })
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 12 }}
         onPointerDown={(event) => event.stopPropagation()}
+        onPointerDownCapture={(event) => {
+          swipeStart.current = { x: event.clientX, y: event.clientY };
+        }}
+        onPointerUp={handlePointerUp}
       >
         <button
           type="button"
@@ -85,7 +108,7 @@ export default function MediaLightbox({ mediaItems, initialIndex = 0, onClose })
           <>
             <button
               type="button"
-              onClick={() => setIndex((current) => (current - 1 + mediaItems.length) % mediaItems.length)}
+              onClick={goPrevious}
               className="absolute left-4 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-2xl border border-white/15 bg-zinc-950/85 text-zinc-100 transition hover:bg-zinc-900 focus:outline-none focus:ring-4 focus:ring-sky-300/25"
               aria-label="Previous media"
             >
@@ -93,7 +116,7 @@ export default function MediaLightbox({ mediaItems, initialIndex = 0, onClose })
             </button>
             <button
               type="button"
-              onClick={() => setIndex((current) => (current + 1) % mediaItems.length)}
+              onClick={goNext}
               className="absolute right-4 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-2xl border border-white/15 bg-zinc-950/85 text-zinc-100 transition hover:bg-zinc-900 focus:outline-none focus:ring-4 focus:ring-sky-300/25"
               aria-label="Next media"
             >

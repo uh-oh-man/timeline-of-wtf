@@ -6,14 +6,16 @@ import TimelineToast from "./TimelineToast";
 import { futureDragWarnings, sameYearDragWarnings } from "../data/timelineWarnings";
 import { groupDisastersByYear, pickRandom } from "../utils/helpers";
 
-function TimelineShell({ children, dragMode, onToggleDragMode, canReorder }) {
+function TimelineShell({ children, dragMode, onToggleDragMode, canReorder, sourceSelector, readOnlyReason }) {
   return (
     <section className="mt-2" aria-label="Main timeline">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <Clock className="h-6 w-6 text-sky-200" aria-hidden="true" />
-          <h2 className="text-3xl font-black text-white">Main Timeline</h2>
-        </div>
+        {sourceSelector || (
+          <div className="flex items-center gap-3">
+            <Clock className="h-6 w-6 text-sky-200" aria-hidden="true" />
+            <h2 className="text-3xl font-black text-white">Main Timeline</h2>
+          </div>
+        )}
         <button
           type="button"
           onClick={onToggleDragMode}
@@ -29,6 +31,11 @@ function TimelineShell({ children, dragMode, onToggleDragMode, canReorder }) {
           Drag mode is active. You can reorder disasters only inside the same year. Time border control is watching.
         </p>
       ) : null}
+      {readOnlyReason ? (
+        <p className="mb-5 rounded-3xl border border-yellow-200/25 bg-yellow-300/10 p-4 text-sm font-bold text-yellow-50">
+          {readOnlyReason}
+        </p>
+      ) : null}
       {children}
     </section>
   );
@@ -41,6 +48,10 @@ export default function Timeline({
   onDelete,
   onOpenDetail,
   onReorderYear,
+  sourceSelector,
+  recentChanges = {},
+  canEdit = true,
+  readOnlyReason = "",
 }) {
   const [dragMode, setDragMode] = useState(false);
   const [timelineToast, setTimelineToast] = useState("");
@@ -78,6 +89,8 @@ export default function Timeline({
         dragMode={dragMode}
         onToggleDragMode={() => setDragMode((current) => !current)}
         canReorder={false}
+        sourceSelector={sourceSelector}
+        readOnlyReason={readOnlyReason}
       >
         <section className="rounded-[1.6rem] border border-white/15 bg-zinc-900/75 p-8 text-center shadow-2xl shadow-black/30 backdrop-blur">
           <Gamepad2 className="mx-auto h-12 w-12 text-red-200" aria-hidden="true" />
@@ -96,6 +109,8 @@ export default function Timeline({
         dragMode={dragMode}
         onToggleDragMode={() => setDragMode((current) => !current)}
         canReorder={false}
+        sourceSelector={sourceSelector}
+        readOnlyReason={readOnlyReason}
       >
         <section className="rounded-[1.6rem] border border-white/15 bg-zinc-900/75 p-8 text-center shadow-2xl shadow-black/30 backdrop-blur">
           <h2 className="text-2xl font-black text-white">No matching disasters</h2>
@@ -111,7 +126,9 @@ export default function Timeline({
     <TimelineShell
       dragMode={dragMode}
       onToggleDragMode={() => setDragMode((current) => !current)}
-      canReorder={disasters.length > 1}
+      canReorder={canEdit && disasters.length > 1}
+      sourceSelector={sourceSelector}
+      readOnlyReason={readOnlyReason}
     >
       <AnimatePresence>{timelineToast ? <TimelineToast message={timelineToast} /> : null}</AnimatePresence>
       <div className="relative pl-5 md:pl-8">
@@ -146,6 +163,9 @@ export default function Timeline({
                         onDelete={onDelete}
                         onOpenDetail={onOpenDetail}
                         dragMode
+                        changeState={recentChanges[disaster.id]?.type}
+                        changeOrigin={recentChanges[disaster.id]?.origin}
+                        canEdit={canEdit}
                       />
                     </Reorder.Item>
                   ))}
@@ -161,6 +181,9 @@ export default function Timeline({
                         onEdit={onEdit}
                         onDelete={onDelete}
                         onOpenDetail={onOpenDetail}
+                        changeState={recentChanges[disaster.id]?.type}
+                        changeOrigin={recentChanges[disaster.id]?.origin}
+                        canEdit={canEdit}
                       />
                     ))}
                   </AnimatePresence>

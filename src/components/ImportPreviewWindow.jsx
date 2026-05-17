@@ -1,4 +1,4 @@
-import { AlertTriangle, ArchiveRestore, FileJson, Merge, X } from "lucide-react";
+import { AlertTriangle, ArchiveRestore, FileJson, Merge, Plus, X } from "lucide-react";
 import { useState } from "react";
 import FloatingWindow from "./FloatingWindow";
 
@@ -11,7 +11,7 @@ function Stat({ label, value }) {
   );
 }
 
-export default function ImportPreviewWindow({ importResult, onMerge, onReplace, onCancel }) {
+export default function ImportPreviewWindow({ importResult, onImportAsNew, onMerge, onReplace, onCancel }) {
   const [confirmReplace, setConfirmReplace] = useState(false);
 
   if (!importResult?.valid) return null;
@@ -40,6 +40,14 @@ export default function ImportPreviewWindow({ importResult, onMerge, onReplace, 
                 Created: {summary.createdAt || "unknown, which is rude"} | Export version: {summary.exportVersion} |
                 Storage version: {summary.storageVersion}
               </p>
+              <p className="mt-2 text-sm leading-6 text-zinc-200">
+                Timeline: {summary.timelineName || "Imported Timeline"} | Type: {summary.timelineType || "local"}
+              </p>
+              {summary.isExampleExport ? (
+                <p className="mt-2 rounded-2xl border border-amber-200/25 bg-amber-300/10 px-3 py-2 text-sm font-black text-amber-50">
+                  This file is an Example Timeline export. Useful for testing. Terrible for court.
+                </p>
+              ) : null}
               <p className="mt-2 text-sm leading-6 text-yellow-100">
                 Media included: {summary.mediaIncluded ? "claimed, but unsupported here" : "no"}.
                 Photos/videos are not imported yet.
@@ -96,6 +104,14 @@ export default function ImportPreviewWindow({ importResult, onMerge, onReplace, 
           </section>
         ) : (
           <div className="flex flex-col gap-3 border-t border-white/10 pt-4 sm:flex-row">
+            <button
+              type="button"
+              onClick={onImportAsNew}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-emerald-300/30 bg-emerald-500/15 px-4 py-3 text-sm font-black text-emerald-50 transition hover:bg-emerald-500/25 focus:outline-none focus:ring-4 focus:ring-emerald-300/25"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Import as New Local Timeline
+            </button>
             <button
               type="button"
               onClick={onMerge}

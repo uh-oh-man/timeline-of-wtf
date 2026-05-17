@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { BookMarked, Database, Download, Eye, FileWarning, FolderOpen, GitBranch, Megaphone, RotateCcw, ShieldCheck, Sparkles, Trophy, Upload } from "lucide-react";
+import { BookMarked, CloudLightning, Database, Download, Eye, FileWarning, FolderOpen, GitBranch, Megaphone, ShieldCheck, Sparkles, Trash2, Trophy, Upload } from "lucide-react";
 import { useState } from "react";
 import FloatingWindow from "./FloatingWindow";
 
@@ -18,10 +18,11 @@ export default function AdminPanel({
   onExportTimeline,
   onImportTimeline,
   onReset,
+  onSimulateRemoteUpdate,
   exampleMode,
   counts,
 }) {
-  const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmWipe, setConfirmWipe] = useState(false);
 
   return (
     <FloatingWindow
@@ -48,9 +49,26 @@ export default function AdminPanel({
         <div className="rounded-3xl border border-white/15 bg-black/30 p-4">
           <ShieldCheck className="h-6 w-6 text-red-100" aria-hidden="true" />
           <p className="mt-3 text-xs font-black uppercase tracking-widest text-zinc-400">Mode</p>
-          <p className="text-2xl font-black text-white">{exampleMode ? "Example" : "Local"}</p>
+          <p className="text-2xl font-black text-white">{counts.mode || (exampleMode ? "Example" : "Local")}</p>
         </div>
       </div>
+
+      {onSimulateRemoteUpdate ? (
+        <div className="mt-5 rounded-3xl border border-cyan-300/20 bg-cyan-500/10 p-4">
+          <p className="text-xs font-black uppercase tracking-widest text-cyan-100">Mock Sync Tools</p>
+          <p className="mt-2 text-sm leading-6 text-zinc-200">
+            Test live shared timeline updates without calling a real server. The server is imaginary, but the anxiety is real.
+          </p>
+          <button
+            type="button"
+            onClick={onSimulateRemoteUpdate}
+            className="mt-3 inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-cyan-300/25 bg-cyan-500/15 px-4 py-3 text-sm font-black text-cyan-50 transition hover:bg-cyan-500/25 focus:outline-none focus:ring-4 focus:ring-cyan-300/25"
+          >
+            <CloudLightning className="h-4 w-4" aria-hidden="true" />
+            Simulate Remote Update
+          </button>
+        </div>
+      ) : null}
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <button
@@ -170,35 +188,35 @@ export default function AdminPanel({
 
       <div className="mt-5 rounded-3xl border border-red-300/25 bg-red-500/10 p-4">
         <p className="text-sm leading-6 text-zinc-100">
-          {confirmReset
-            ? "This will nuke your local timeline like a BIOS update gone feral. Continue?"
-            : "Reset only clears this app's namespaced localStorage keys. It does not touch unrelated browser storage."}
+          {confirmWipe
+            ? "This will wipe your local timeline, achievements, secrets, settings, and app data like a BIOS update with anger issues. Continue?"
+            : "Wipe only clears this app's namespaced localStorage keys. It does not touch unrelated browser storage."}
         </p>
-        {confirmReset ? (
+        {confirmWipe ? (
           <div className="mt-4 flex flex-col gap-3 sm:flex-row">
             <button
               type="button"
               onClick={onReset}
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-500 px-4 py-3 text-sm font-black text-white transition hover:bg-red-400 focus:outline-none focus:ring-4 focus:ring-red-300/35"
             >
-              Nuke It
+              Wipe It
             </button>
             <button
               type="button"
-              onClick={() => setConfirmReset(false)}
+              onClick={() => setConfirmWipe(false)}
               className="rounded-2xl border border-white/15 bg-zinc-900/80 px-4 py-3 text-sm font-black text-zinc-50 transition hover:bg-zinc-800 focus:outline-none focus:ring-4 focus:ring-sky-300/25"
             >
-              I Still Have Attachment Issues
+              Abort Wipe
             </button>
           </div>
         ) : (
           <button
             type="button"
-            onClick={() => setConfirmReset(true)}
+            onClick={() => setConfirmWipe(true)}
             className="mt-4 inline-flex items-center justify-center gap-2 rounded-2xl bg-red-500 px-4 py-3 text-sm font-black text-white transition hover:bg-red-400 focus:outline-none focus:ring-4 focus:ring-red-300/35"
           >
-            <RotateCcw className="h-4 w-4" aria-hidden="true" />
-            Reset Website
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+            Wipe Website Data
           </button>
         )}
       </div>

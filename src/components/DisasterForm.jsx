@@ -1,7 +1,8 @@
-import { Film, ImagePlus, PlusCircle, Trash2, X } from "lucide-react";
+import { Film, ImagePlus, Palette, PlusCircle, Shuffle, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { CUSTOM_OPTION, cx, getGameYear, joinLines, splitLines, uniqueByName } from "../utils/helpers";
+import { DEFAULT_ACCENT_COLOR, getEventAccentColor, normalizeHexColor } from "../utils/colorUtils";
 import { filesToStagedMedia, formatFileSize, getMediaUrl, isImageMedia, isVideoMedia } from "../utils/mediaUtils";
 
 const inputClass =
@@ -9,6 +10,8 @@ const inputClass =
 
 const ghostButtonClass =
   "rounded-2xl border border-white/15 bg-zinc-900/80 px-5 py-4 text-sm font-black text-zinc-50 transition hover:bg-zinc-800 hover:text-white focus:outline-none focus:ring-4 focus:ring-sky-300/25";
+
+const randomAccentColors = ["#22d3ee", "#ef4444", "#a78bfa", "#f59e0b", "#22c55e", "#3b82f6"];
 
 function emptyDraft() {
   return {
@@ -19,6 +22,7 @@ function emptyDraft() {
     customTag: "",
     title: "",
     summary: "",
+    accentColor: "",
     directConnections: [],
     connectionNotes: "",
     media: [],
@@ -55,6 +59,7 @@ export default function DisasterForm({
       customTag: tagInList ? "" : editingDisaster.tag || "",
       title: editingDisaster.title || "",
       summary: editingDisaster.summary || "",
+      accentColor: normalizeHexColor(editingDisaster.accentColor),
       directConnections: editingDisaster.directConnections || [],
       connectionNotes: joinLines(editingDisaster.connections),
       media: editingDisaster.media || [],
@@ -118,6 +123,7 @@ export default function DisasterForm({
         customTag: tagInList ? "" : editingDisaster.tag || "",
         title: editingDisaster.title || "",
         summary: editingDisaster.summary || "",
+        accentColor: normalizeHexColor(editingDisaster.accentColor),
         directConnections: editingDisaster.directConnections || [],
         connectionNotes: joinLines(editingDisaster.connections),
         media: editingDisaster.media || [],
@@ -176,6 +182,7 @@ export default function DisasterForm({
       source,
       tag,
       summary: draft.summary.trim(),
+      ...(normalizeHexColor(draft.accentColor) ? { accentColor: normalizeHexColor(draft.accentColor) } : {}),
       connections: splitLines(draft.connectionNotes),
       directConnections: uniqueByName(draft.directConnections).filter((game) => game !== source),
       media: draft.media || [],
@@ -305,6 +312,56 @@ export default function DisasterForm({
             placeholder="What happened? Make it stupid. Make it canon."
           />
         </label>
+
+        <section className="grid gap-3 rounded-3xl border border-white/15 bg-black/25 p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-black uppercase tracking-widest text-zinc-100">
+                <Palette className="h-4 w-4 text-sky-100" aria-hidden="true" />
+                Disaster Accent Color
+              </div>
+              <p className="mt-1 text-xs leading-5 text-zinc-300">
+                This color stains the timeline. Probably permanently.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <span
+                className="h-12 w-12 rounded-2xl border border-white/20 shadow-lg"
+                style={{
+                  background: normalizeHexColor(draft.accentColor) || getEventAccentColor({
+                    source: currentSource,
+                    tag: draft.selectedTag === CUSTOM_OPTION ? draft.customTag : draft.selectedTag,
+                    title: draft.title,
+                  }),
+                  boxShadow: `0 0 24px ${normalizeHexColor(draft.accentColor) || DEFAULT_ACCENT_COLOR}55`,
+                }}
+                aria-hidden="true"
+              />
+              <input
+                type="color"
+                value={normalizeHexColor(draft.accentColor) || DEFAULT_ACCENT_COLOR}
+                onChange={(event) => updateField("accentColor", event.target.value)}
+                className="h-12 w-16 cursor-pointer rounded-2xl border border-white/15 bg-zinc-900 p-1 focus:outline-none focus:ring-4 focus:ring-sky-300/25"
+                aria-label="Pick disaster accent color"
+              />
+              <button
+                type="button"
+                onClick={() => updateField("accentColor", randomAccentColors[Math.floor(Math.random() * randomAccentColors.length)])}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-sky-300/25 bg-sky-500/15 px-4 py-3 text-sm font-black text-sky-50 transition hover:bg-sky-500/25 focus:outline-none focus:ring-4 focus:ring-sky-300/25"
+              >
+                <Shuffle className="h-4 w-4" aria-hidden="true" />
+                Randomize Color
+              </button>
+              <button
+                type="button"
+                onClick={() => updateField("accentColor", "")}
+                className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-white/15 bg-zinc-900/80 px-4 py-3 text-sm font-black text-zinc-50 transition hover:bg-zinc-800 focus:outline-none focus:ring-4 focus:ring-sky-300/25"
+              >
+                Use Default
+              </button>
+            </div>
+          </div>
+        </section>
 
         <div className="grid gap-3 rounded-3xl border border-white/15 bg-black/25 p-4">
           <div>

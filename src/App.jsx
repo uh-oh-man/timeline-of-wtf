@@ -1,5 +1,7 @@
 import { AnimatePresence } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { UserRound } from "lucide-react";
+import AccountWindow from "./components/AccountWindow";
 import AgeGateModal from "./components/AgeGateModal";
 import AchievementsWindow from "./components/AchievementsWindow";
 import AchievementToast from "./components/AchievementToast";
@@ -22,6 +24,7 @@ import ReactionOverlayHost from "./components/ReactionOverlayHost";
 import SearchBar from "./components/SearchBar";
 import TermsBar from "./components/TermsBar";
 import Timeline from "./components/Timeline";
+import TimelineSourceSelector from "./components/TimelineSourceSelector";
 import TimelineToast from "./components/TimelineToast";
 import WebsiteLoreLedger from "./components/WebsiteLoreLedger";
 import { ageGateMessages } from "./data/ageGateMessages";
@@ -41,6 +44,7 @@ import { unlockAchievement } from "./utils/achievements";
 import { installKeyboardTriggers } from "./utils/keyboardTriggers";
 import { attachMediaToDisasters, distributeGeneratedMedia, filesToExampleMedia, revokeObjectUrls } from "./utils/mediaUtils";
 import { generateOrbEscapePath } from "./utils/orbUtils";
+import { createMockSession, loadMockAuthSession, saveMockAuthSession } from "./utils/mockAuth";
 import {
   buildUhohFileName,
   downloadUhohFile,
@@ -50,25 +54,43 @@ import {
 import {
   clearAppStorage,
   loadAdminMode,
-  loadDisasters,
   loadFlags,
   loadKnownSecrets,
-  loadPlannedGames,
-  loadTags,
   loadUnlockedAchievements,
   saveAdminMode,
-  saveDisasters,
   saveFlags,
   saveKnownSecrets,
-  savePlannedGames,
-  saveTags,
   saveUnlockedAchievements,
 } from "./utils/storage";
+import {
+  SOURCE_TYPES,
+  canEditTimelineSource,
+  getReadOnlyReason,
+  loadSelectedTimelineSource,
+  saveSelectedTimelineSource,
+} from "./services/timelineSources/timelineSourceManager";
+import * as localTimelineSource from "./services/timelineSources/localTimelineSource";
+import * as mockSyncedTimelineSource from "./services/timelineSources/mockSyncedTimelineSource";
 
 export default function App() {
-  const [disasters, setDisasters] = useState(() => loadDisasters());
-  const [tags, setTags] = useState(() => loadTags(defaultTags));
-  const [plannedGames, setPlannedGames] = useState(() => loadPlannedGames(defaultPlannedGames));
+  const [selectedTimelineSource, setSelectedTimelineSource] = useState(() => loadSelectedTimelineSource());
+  const [localTimelines, setLocalTimelines] = useState(() => localTimelineSource.ensureLocalTimelineStorage().timelines);
+  const [activeLocalTimelineId, setActiveLocalTimelineId] = useState(() => localTimelineSource.getActiveTimelineId());
+  const [disasters, setDisasters] = useState(() => {
+    const source = loadSelectedTimelineSource();
+    if (source === SOURCE_TYPES.SYNCED_MOCK) return mockSyncedTimelineSource.listEvents();
+    return localTimelineSource.listEvents(localTimelineSource.getActiveTimelineId());
+  });
+  const [tags, setTags] = useState(() => {
+    const source = loadSelectedTimelineSource();
+    if (source === SOURCE_TYPES.SYNCED_MOCK) return mockSyncedTimelineSource.listTags(null, defaultTags);
+    return localTimelineSource.listTags(localTimelineSource.getActiveTimelineId(), defaultTags);
+  });
+  const [plannedGames, setPlannedGames] = useState(() => {
+    const source = loadSelectedTimelineSource();
+    if (source === SOURCE_TYPES.SYNCED_MOCK) return mockSyncedTimelineSource.listPlannedGames(null, defaultPlannedGames);
+    return localTimelineSource.listPlannedGames(localTimelineSource.getActiveTimelineId(), defaultPlannedGames);
+  });
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -90,7 +112,7 @@ export default function App() {
   const [adminMode, setAdminMode] = useState(() => loadAdminMode());
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
   const [adminAnimationActive, setAdminAnimationActive] = useState(false);
-  const [exampleMode, setExampleMode] = useState(false);
+  const [exampleMode, setExampleMode] = useState(() => loadSelectedTimelineSource() === SOURCE_TYPES.EXAMPLE);
   const [exampleSessionEvents, setExampleSessionEvents] = useState([]);
   const [exampleMediaItems, setExampleMediaItems] = useState([]);
   const [exampleMediaStatus, setExampleMediaStatus] = useState("");
@@ -98,6 +120,10 @@ export default function App() {
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
   const [loreLedgerOpen, setLoreLedgerOpen] = useState(false);
   const [pendingImport, setPendingImport] = useState(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [mockAuthSession, setMockAuthSession] = useState(() => loadMockAuthSession());
+  const [syncStatus, setSyncStatus] = useState(() => mockSyncedTimelineSource.getStatus());
+  const [recentTimelineChanges, setRecentTimelineChanges] = useState({});
   const hasCheckedAgeGate = useRef(false);
   const hasCheckedAd = useRef(false);
   const hasCheckedTerms = useRef(false);
@@ -107,6 +133,9 @@ export default function App() {
   const exampleFileInputRef = useRef(null);
   const importFileInputRef = useRef(null);
   const systemToastTimer = useRef(null);
+  const timelineChangeTimers = useRef([]);
+  const disastersRef = useRef(disasters);
+  const mockRevisionRef = useRef(mockSyncedTimelineSource.getRevision());
   const footerMessage = useMemo(() => pickRandom(footerMessages), []);
 
   const buildExampleEvents = useCallback((extraMedia = []) => {
@@ -114,6 +143,28 @@ export default function App() {
     const generatedMedia = distributeGeneratedMedia(generatedExampleMedia, disasterIds);
     return attachMediaToDisasters(exampleTimeline, [...generatedMedia, ...extraMedia]);
   }, []);
+
+  const activeSource = exampleMode ? SOURCE_TYPES.EXAMPLE : selectedTimelineSource;
+  const canEditCurrentTimeline = canEditTimelineSource(activeSource, mockAuthSession);
+  const readOnlyReason = canEditCurrentTimeline ? "" : getReadOnlyReason(activeSource, mockAuthSession);
+  const activeLocalTimeline = useMemo(
+    () => localTimelines.find((timeline) => timeline.id === activeLocalTimelineId) || localTimelines[0] || null,
+    [activeLocalTimelineId, localTimelines],
+  );
+  const activeTimelineMetadata = useMemo(() => {
+    if (activeSource === SOURCE_TYPES.EXAMPLE) {
+      return {
+        id: "example",
+        name: "Example Timeline",
+        type: "example",
+        description: "Demo/test timeline for The Timeline of What The Fuck.",
+      };
+    }
+    if (activeSource === SOURCE_TYPES.SYNCED_MOCK) {
+      return mockSyncedTimelineSource.getActiveTimeline();
+    }
+    return activeLocalTimeline;
+  }, [activeLocalTimeline, activeSource]);
 
   const displayDisasters = exampleMode ? exampleSessionEvents : disasters;
   const games = useMemo(() => getGameNames(displayDisasters), [displayDisasters]);
@@ -170,20 +221,48 @@ export default function App() {
     modalStateRef.current = { majorWindowOpen };
   }, [majorWindowOpen]);
 
-  useEffect(() => saveDisasters(disasters), [disasters]);
-  useEffect(() => saveTags(tags), [tags]);
-  useEffect(() => savePlannedGames(plannedGames), [plannedGames]);
+  useEffect(() => {
+    disastersRef.current = disasters;
+  }, [disasters]);
+
+  useEffect(() => {
+    saveSelectedTimelineSource(activeSource);
+  }, [activeSource]);
+
+  useEffect(() => {
+    if (exampleMode || selectedTimelineSource !== SOURCE_TYPES.LOCAL || !activeLocalTimelineId) return;
+    localTimelineSource.saveEvents(activeLocalTimelineId, disasters);
+    setLocalTimelines(localTimelineSource.getTimelines());
+  }, [activeLocalTimelineId, disasters, exampleMode, selectedTimelineSource]);
+
+  useEffect(() => {
+    if (exampleMode || selectedTimelineSource !== SOURCE_TYPES.LOCAL || !activeLocalTimelineId) return;
+    localTimelineSource.saveTags(activeLocalTimelineId, tags);
+    setLocalTimelines(localTimelineSource.getTimelines());
+  }, [activeLocalTimelineId, exampleMode, selectedTimelineSource, tags]);
+
+  useEffect(() => {
+    if (exampleMode || selectedTimelineSource !== SOURCE_TYPES.LOCAL || !activeLocalTimelineId) return;
+    localTimelineSource.savePlannedGames(activeLocalTimelineId, plannedGames);
+    setLocalTimelines(localTimelineSource.getTimelines());
+  }, [activeLocalTimelineId, exampleMode, plannedGames, selectedTimelineSource]);
+
   useEffect(() => saveUnlockedAchievements(unlockedAchievementIds), [unlockedAchievementIds]);
   useEffect(() => saveFlags(flags), [flags]);
   useEffect(() => saveKnownSecrets(knownSecretIds), [knownSecretIds]);
   useEffect(() => saveAdminMode(adminMode), [adminMode]);
+  useEffect(() => saveMockAuthSession(mockAuthSession), [mockAuthSession]);
 
   useEffect(() => {
     return () => revokeObjectUrls(exampleMediaItems);
   }, [exampleMediaItems]);
 
   useEffect(() => {
-    return () => window.clearTimeout(systemToastTimer.current);
+    return () => {
+      window.clearTimeout(systemToastTimer.current);
+      timelineChangeTimers.current.forEach((timer) => window.clearTimeout(timer));
+      timelineChangeTimers.current = [];
+    };
   }, []);
 
   const showSystemToast = useCallback((message) => {
@@ -191,6 +270,202 @@ export default function App() {
     window.clearTimeout(systemToastTimer.current);
     systemToastTimer.current = window.setTimeout(() => setSystemToast(""), 2800);
   }, []);
+
+  const markTimelineChange = useCallback((eventId, type, origin = "local") => {
+    if (!eventId) return;
+    const timestamp = Date.now();
+    setRecentTimelineChanges((current) => ({
+      ...current,
+      [eventId]: { type, origin, timestamp },
+    }));
+    const timer = window.setTimeout(() => {
+      setRecentTimelineChanges((current) => {
+        if (current[eventId]?.timestamp !== timestamp) return current;
+        const next = { ...current };
+        delete next[eventId];
+        return next;
+      });
+    }, type === "deleted" ? 900 : 2600);
+    timelineChangeTimers.current.push(timer);
+  }, []);
+
+  const refreshLocalTimelineList = useCallback(() => {
+    const timelines = localTimelineSource.getTimelines();
+    setLocalTimelines(timelines);
+    setActiveLocalTimelineId(localTimelineSource.getActiveTimelineId());
+    return timelines;
+  }, []);
+
+  const loadLocalTimelineData = useCallback((timelineId = localTimelineSource.getActiveTimelineId()) => {
+    const timeline = localTimelineSource.setActiveTimeline(timelineId);
+    setActiveLocalTimelineId(timeline.id);
+    setLocalTimelines(localTimelineSource.getTimelines());
+    setDisasters(localTimelineSource.listEvents(timeline.id));
+    setTags(localTimelineSource.listTags(timeline.id, defaultTags));
+    setPlannedGames(localTimelineSource.listPlannedGames(timeline.id, defaultPlannedGames));
+    mockRevisionRef.current = mockSyncedTimelineSource.getRevision();
+    return timeline;
+  }, []);
+
+  const loadMockSyncedData = useCallback(() => {
+    const snapshot = mockSyncedTimelineSource.getSnapshot();
+    mockRevisionRef.current = snapshot.revision;
+    setDisasters(snapshot.events);
+    setTags(mockSyncedTimelineSource.listTags(null, defaultTags));
+    setPlannedGames(mockSyncedTimelineSource.listPlannedGames(null, defaultPlannedGames));
+    setSyncStatus(mockSyncedTimelineSource.getStatus());
+    return snapshot;
+  }, []);
+
+  const leaveExampleMode = useCallback(() => {
+    setExampleMode(false);
+    setExampleSessionEvents([]);
+    setDetailDisasterId(null);
+    setShowForm(false);
+    setEditingId(null);
+  }, []);
+
+  const selectTimelineSource = useCallback((source) => {
+    if (source === SOURCE_TYPES.EXAMPLE) {
+      setSelectedTimelineSource(SOURCE_TYPES.EXAMPLE);
+      setExampleMode(true);
+      setExampleSessionEvents(buildExampleEvents(exampleMediaItems));
+      setShowForm(false);
+      setEditingId(null);
+      setExampleMediaStatus("Example mode edits are temporary. The archive will deny everything later.");
+      return;
+    }
+
+    leaveExampleMode();
+    setSelectedTimelineSource(source);
+    if (source === SOURCE_TYPES.SYNCED_MOCK) {
+      loadMockSyncedData();
+      showSystemToast("Mock sync active. The server is imaginary, but the anxiety is real.");
+      return;
+    }
+
+    loadLocalTimelineData(activeLocalTimelineId);
+  }, [activeLocalTimelineId, buildExampleEvents, exampleMediaItems, leaveExampleMode, loadLocalTimelineData, loadMockSyncedData, showSystemToast]);
+
+  const switchLocalTimeline = useCallback((timelineId) => {
+    leaveExampleMode();
+    setSelectedTimelineSource(SOURCE_TYPES.LOCAL);
+    const timeline = loadLocalTimelineData(timelineId);
+    showSystemToast("Switched timeline. Reality has been reassigned.");
+    return timeline;
+  }, [leaveExampleMode, loadLocalTimelineData, showSystemToast]);
+
+  const createLocalTimeline = useCallback((name, data = {}) => {
+    leaveExampleMode();
+    const timeline = localTimelineSource.createTimeline(name, data);
+    setSelectedTimelineSource(SOURCE_TYPES.LOCAL);
+    refreshLocalTimelineList();
+    loadLocalTimelineData(timeline.id);
+    showSystemToast("New timeline created. Fresh crime scene.");
+    return timeline;
+  }, [leaveExampleMode, loadLocalTimelineData, refreshLocalTimelineList, showSystemToast]);
+
+  const renameLocalTimeline = useCallback((timelineId, name) => {
+    localTimelineSource.renameTimeline(timelineId, name);
+    refreshLocalTimelineList();
+    showSystemToast("Timeline renamed. The paperwork is pretending this was always true.");
+  }, [refreshLocalTimelineList, showSystemToast]);
+
+  const duplicateLocalTimeline = useCallback((timelineId) => {
+    leaveExampleMode();
+    const timeline = localTimelineSource.duplicateTimeline(timelineId);
+    if (!timeline) return;
+    setSelectedTimelineSource(SOURCE_TYPES.LOCAL);
+    refreshLocalTimelineList();
+    loadLocalTimelineData(timeline.id);
+    showSystemToast("Timeline cloned. Ethically questionable, technically useful.");
+  }, [leaveExampleMode, loadLocalTimelineData, refreshLocalTimelineList, showSystemToast]);
+
+  const deleteLocalTimeline = useCallback((timelineId) => {
+    const result = localTimelineSource.deleteTimeline(timelineId);
+    if (!result.deleted) {
+      showSystemToast("Cannot delete the last local timeline. The archive needs at least one bunker.");
+      return;
+    }
+    setSelectedTimelineSource(SOURCE_TYPES.LOCAL);
+    refreshLocalTimelineList();
+    loadLocalTimelineData(result.activeTimeline.id);
+    showSystemToast("Timeline deleted. The archive will deny it ever existed.");
+  }, [loadLocalTimelineData, refreshLocalTimelineList, showSystemToast]);
+
+  function diffTimelineEvents(previousEvents, nextEvents) {
+    const previousById = new Map(previousEvents.map((event) => [event.id, event]));
+    const nextById = new Map(nextEvents.map((event) => [event.id, event]));
+    const added = nextEvents.filter((event) => !previousById.has(event.id));
+    const removed = previousEvents.filter((event) => !nextById.has(event.id));
+    const updated = nextEvents.filter((event) => {
+      const previous = previousById.get(event.id);
+      return previous && JSON.stringify(previous) !== JSON.stringify(event);
+    });
+
+    return { added, removed, updated };
+  }
+
+  const applySyncedSnapshot = useCallback((snapshot) => {
+    const diff = diffTimelineEvents(disastersRef.current, snapshot.events);
+    [...diff.added, ...diff.updated].forEach((event) => {
+      markTimelineChange(event.id, diff.added.includes(event) ? "created" : "updated", "sync");
+    });
+    diff.removed.forEach((event) => markTimelineChange(event.id, "deleted", "sync"));
+
+    const applyData = () => {
+      setDisasters(snapshot.events);
+      setTags(mockSyncedTimelineSource.listTags(null, defaultTags));
+      setPlannedGames(mockSyncedTimelineSource.listPlannedGames(null, defaultPlannedGames));
+      setSyncStatus(mockSyncedTimelineSource.getStatus());
+    };
+
+    if (diff.removed.length) {
+      window.setTimeout(applyData, 430);
+    } else {
+      applyData();
+    }
+
+    if (diff.added.length || diff.removed.length || diff.updated.length) {
+      const parts = [
+        diff.added.length ? `${diff.added.length} added` : "",
+        diff.removed.length ? `${diff.removed.length} removed` : "",
+        diff.updated.length ? `${diff.updated.length} updated` : "",
+      ].filter(Boolean);
+      showSystemToast(parts.length > 1 ? `Shared timeline updated: ${parts.join(", ")}.` : "Shared timeline updated. The archive twitched.");
+    }
+  }, [markTimelineChange, showSystemToast]);
+
+  useEffect(() => {
+    if (!exampleMode || exampleSessionEvents.length) return;
+    setExampleSessionEvents(buildExampleEvents(exampleMediaItems));
+    setExampleMediaStatus("Example mode edits are temporary. The archive will deny everything later.");
+  }, [buildExampleEvents, exampleMediaItems, exampleMode, exampleSessionEvents.length]);
+
+  useEffect(() => {
+    if (selectedTimelineSource !== SOURCE_TYPES.SYNCED_MOCK || exampleMode) return undefined;
+    let stopped = false;
+    setSyncStatus((current) => ({ ...current, label: "Checking...", detail: "Checking shared timeline... yelling into localStorage." }));
+
+    const poll = () => {
+      if (stopped || document.hidden) return;
+      const snapshot = mockSyncedTimelineSource.getSnapshot();
+      if (snapshot.revision !== mockRevisionRef.current) {
+        mockRevisionRef.current = snapshot.revision;
+        applySyncedSnapshot(snapshot);
+      } else {
+        setSyncStatus(mockSyncedTimelineSource.getStatus());
+      }
+    };
+
+    poll();
+    const intervalId = window.setInterval(poll, mockSyncedTimelineSource.SYNC_POLL_INTERVAL_MS);
+
+    return () => {
+      stopped = true;
+      window.clearInterval(intervalId);
+    };
+  }, [applySyncedSnapshot, exampleMode, selectedTimelineSource]);
 
   useEffect(() => {
     const rescueMessages = [
@@ -403,9 +678,9 @@ export default function App() {
   }, [flags.tosDismissed, showTosBar]);
 
   function openNewDisasterForm() {
-    if (exampleMode) {
-      setExampleMode(false);
-      setExampleSessionEvents([]);
+    if (!canEditCurrentTimeline) {
+      showSystemToast(readOnlyReason || "This timeline is view-only. The archive has locked the pens.");
+      return;
     }
     setEditingId(null);
     setShowForm(true);
@@ -415,6 +690,10 @@ export default function App() {
   }
 
   function openEditForm(id) {
+    if (!canEditCurrentTimeline) {
+      showSystemToast(readOnlyReason || "This timeline is view-only. The archive has locked the pens.");
+      return;
+    }
     setEditingId(id);
     setShowForm(true);
     window.setTimeout(() => {
@@ -428,6 +707,11 @@ export default function App() {
   }
 
   function reorderYear(year, orderedIds) {
+    if (!canEditCurrentTimeline) {
+      showSystemToast(readOnlyReason || "This timeline is view-only. Time border control denied the clipboard.");
+      return;
+    }
+
     if (exampleMode) {
       setExampleSessionEvents((current) =>
         current.map((disaster) => {
@@ -439,13 +723,18 @@ export default function App() {
       return;
     }
 
-    setDisasters((current) =>
-      current.map((disaster) => {
+    setDisasters((current) => {
+      const nextEvents = current.map((disaster) => {
         if (normalizeText(disaster.year) !== normalizeText(year)) return disaster;
         const nextOrder = orderedIds.indexOf(disaster.id);
         return nextOrder === -1 ? disaster : { ...disaster, sortOrder: nextOrder };
-      }),
-    );
+      });
+      if (selectedTimelineSource === SOURCE_TYPES.SYNCED_MOCK) {
+        mockSyncedTimelineSource.saveEvents(null, nextEvents);
+        setSyncStatus(mockSyncedTimelineSource.getStatus());
+      }
+      return nextEvents;
+    });
   }
 
   function performExampleSave(draft) {
@@ -471,6 +760,7 @@ export default function App() {
     };
     nextDisaster.media = nextDisaster.media.map((media) => ({ ...media, disasterId: nextDisaster.id }));
 
+    markTimelineChange(nextDisaster.id, draft.id ? "updated" : "created", "example");
     setExampleSessionEvents((current) => {
       if (draft.id) {
         return current.map((disaster) => (disaster.id === draft.id ? nextDisaster : disaster));
@@ -484,6 +774,11 @@ export default function App() {
   }
 
   function performSaveDisaster(draft, { closeAfterSave = false } = {}) {
+    if (!canEditCurrentTimeline) {
+      showSystemToast(readOnlyReason || "This timeline is view-only. The archive has locked the pens.");
+      return false;
+    }
+
     const existingDisaster = draft.id ? disasters.find((disaster) => disaster.id === draft.id) : null;
     const yearChanged = existingDisaster && normalizeText(existingDisaster.year) !== normalizeText(draft.year);
     const yearPeerCount = disasters.filter(
@@ -508,14 +803,31 @@ export default function App() {
     const isCustomTag = !tags.includes(nextDisaster.tag);
 
     setDisasters((current) => {
+      let nextEvents;
       if (draft.id) {
-        return current.map((disaster) => (disaster.id === draft.id ? nextDisaster : disaster));
+        nextEvents = current.map((disaster) => (disaster.id === draft.id ? nextDisaster : disaster));
+      } else {
+        nextEvents = [...current, nextDisaster];
       }
 
-      return [...current, nextDisaster];
+      if (selectedTimelineSource === SOURCE_TYPES.SYNCED_MOCK) {
+        mockSyncedTimelineSource.saveEvents(null, nextEvents);
+        setSyncStatus(mockSyncedTimelineSource.getStatus());
+        mockRevisionRef.current = mockSyncedTimelineSource.getRevision();
+      }
+      return nextEvents;
     });
 
-    setTags((current) => uniqueByName([...current, nextDisaster.tag]));
+    setTags((current) => {
+      const nextTags = uniqueByName([...current, nextDisaster.tag]);
+      if (selectedTimelineSource === SOURCE_TYPES.SYNCED_MOCK) {
+        mockSyncedTimelineSource.saveTags(null, nextTags);
+        setSyncStatus(mockSyncedTimelineSource.getStatus());
+        mockRevisionRef.current = mockSyncedTimelineSource.getRevision();
+      }
+      return nextTags;
+    });
+    markTimelineChange(nextDisaster.id, isNewDisaster ? "created" : "updated", selectedTimelineSource === SOURCE_TYPES.SYNCED_MOCK ? "sync" : "local");
 
     if (isNewDisaster) {
       unlock("first_disaster");
@@ -566,22 +878,36 @@ export default function App() {
   }
 
   function requestDeleteDisaster(id) {
+    if (!canEditCurrentTimeline) {
+      showSystemToast(readOnlyReason || "This timeline is view-only. The archive has locked the shredder.");
+      return;
+    }
     setPendingDeleteId(id);
   }
 
   function confirmDeleteDisaster() {
     if (!pendingDeleteId) return;
+    if (!canEditCurrentTimeline) {
+      setPendingDeleteId(null);
+      showSystemToast(readOnlyReason || "This timeline is view-only. The archive has locked the shredder.");
+      return;
+    }
 
     if (exampleMode) {
-      setExampleSessionEvents((current) => current.filter((item) => item.id !== pendingDeleteId));
+      const deletingId = pendingDeleteId;
+      markTimelineChange(deletingId, "deleted", "example");
       if (editingId === pendingDeleteId) closeForm();
       if (detailDisasterId === pendingDeleteId) setDetailDisasterId(null);
       setPendingDeleteId(null);
       showSystemToast("Example evidence deleted. It will grow back next session.");
+      window.setTimeout(() => {
+        setExampleSessionEvents((current) => current.filter((item) => item.id !== deletingId));
+      }, 420);
       return;
     }
 
-    setDisasters((current) => current.filter((item) => item.id !== pendingDeleteId));
+    const deletingId = pendingDeleteId;
+    markTimelineChange(deletingId, "deleted", selectedTimelineSource === SOURCE_TYPES.SYNCED_MOCK ? "sync" : "local");
 
     if (editingId === pendingDeleteId) {
       closeForm();
@@ -592,14 +918,49 @@ export default function App() {
     }
 
     setPendingDeleteId(null);
+    window.setTimeout(() => {
+      setDisasters((current) => {
+        const nextEvents = current.filter((item) => item.id !== deletingId);
+        if (selectedTimelineSource === SOURCE_TYPES.SYNCED_MOCK) {
+          mockSyncedTimelineSource.saveEvents(null, nextEvents);
+          setSyncStatus(mockSyncedTimelineSource.getStatus());
+          mockRevisionRef.current = mockSyncedTimelineSource.getRevision();
+        }
+        return nextEvents;
+      });
+    }, 420);
   }
 
   function addPlannedGame(game) {
-    setPlannedGames((current) => uniqueByName([...current, game]));
+    if (!canEditCurrentTimeline) {
+      showSystemToast(readOnlyReason || "This timeline is view-only. Future plans require fake clearance.");
+      return;
+    }
+    setPlannedGames((current) => {
+      const nextGames = uniqueByName([...current, game]);
+      if (selectedTimelineSource === SOURCE_TYPES.SYNCED_MOCK && !exampleMode) {
+        mockSyncedTimelineSource.savePlannedGames(null, nextGames);
+        setSyncStatus(mockSyncedTimelineSource.getStatus());
+        mockRevisionRef.current = mockSyncedTimelineSource.getRevision();
+      }
+      return nextGames;
+    });
   }
 
   function removePlannedGame(index) {
-    setPlannedGames((current) => current.filter((_, itemIndex) => itemIndex !== index));
+    if (!canEditCurrentTimeline) {
+      showSystemToast(readOnlyReason || "This timeline is view-only. The future is legally taped down.");
+      return;
+    }
+    setPlannedGames((current) => {
+      const nextGames = current.filter((_, itemIndex) => itemIndex !== index);
+      if (selectedTimelineSource === SOURCE_TYPES.SYNCED_MOCK && !exampleMode) {
+        mockSyncedTimelineSource.savePlannedGames(null, nextGames);
+        setSyncStatus(mockSyncedTimelineSource.getStatus());
+        mockRevisionRef.current = mockSyncedTimelineSource.getRevision();
+      }
+      return nextGames;
+    });
   }
 
   function acceptTerms() {
@@ -645,6 +1006,7 @@ export default function App() {
   }
 
   function enterExampleMode() {
+    setSelectedTimelineSource(SOURCE_TYPES.EXAMPLE);
     setExampleMode(true);
     setExampleSessionEvents(buildExampleEvents(exampleMediaItems));
     setShowForm(false);
@@ -653,11 +1015,9 @@ export default function App() {
   }
 
   function exitExampleMode() {
-    setExampleMode(false);
-    setExampleSessionEvents([]);
-    setDetailDisasterId(null);
-    setShowForm(false);
-    setEditingId(null);
+    leaveExampleMode();
+    setSelectedTimelineSource(SOURCE_TYPES.LOCAL);
+    loadLocalTimelineData(activeLocalTimelineId);
   }
 
   async function loadExampleMediaFiles(files) {
@@ -756,22 +1116,35 @@ export default function App() {
   }
 
   function exportRealTimeline() {
-    if (exampleMode) {
-      showSystemToast("You are in Example Mode. Exporting fake demo nonsense is probably not what you meant. Using real local data instead.");
-    } else {
-      showSystemToast("Timeline exported. Media stayed home because evidence teleportation is still illegal.");
+    const isExampleExport = activeSource === SOURCE_TYPES.EXAMPLE;
+    if (isExampleExport) {
+      const confirmed = window.confirm(
+        "You are exporting the Example Timeline. This is fake demo/testing nonsense, not your real timeline. Useful for testing. Terrible for court.",
+      );
+      if (!confirmed) {
+        showSystemToast("Example export aborted. The real crimes remain unbothered.");
+        return;
+      }
     }
 
     const createdAt = new Date().toISOString();
     const text = exportTimelineData({
-      events: disasters,
+      events: displayDisasters,
       tags,
       plannedGames,
-      knownSecrets: knownSecretIds,
-      achievements: unlockedAchievementIds,
+      knownSecrets: isExampleExport ? [] : knownSecretIds,
+      achievements: isExampleExport ? [] : unlockedAchievementIds,
+      timeline: activeTimelineMetadata,
+      timelineType: isExampleExport ? "example" : activeTimelineMetadata?.type || activeSource,
+      isExampleExport,
       createdAt,
     });
     downloadUhohFile(text, buildUhohFileName(new Date(createdAt)));
+    showSystemToast(
+      isExampleExport
+        ? "Example Timeline exported. Fake nonsense bottled for science."
+        : "Timeline exported. Media stayed home because evidence teleportation is still illegal.",
+    );
   }
 
   function requestImportTimeline() {
@@ -801,27 +1174,96 @@ export default function App() {
 
   function mergeImport() {
     if (!pendingImport?.data) return;
+    if (!canEditCurrentTimeline) {
+      showSystemToast(readOnlyReason || "This timeline is view-only. Import merge denied by fake bureaucracy.");
+      return;
+    }
 
-    setDisasters((current) => [...current, ...buildImportEvents(pendingImport.data.events, current)]);
-    setTags((current) => uniqueByName([...current, ...pendingImport.data.tags]));
-    setPlannedGames((current) => uniqueByName([...current, ...pendingImport.data.plannedGames]));
+    if (exampleMode) {
+      const importedEvents = buildImportEvents(pendingImport.data.events, exampleSessionEvents);
+      importedEvents.forEach((event) => markTimelineChange(event.id, "created", "import"));
+      setExampleSessionEvents((current) => [...current, ...importedEvents]);
+      setPendingImport(null);
+      showSystemToast("Import merged into Example Mode. Demo nonsense has eaten more demo nonsense.");
+      return;
+    }
+
+    setDisasters((current) => {
+      const importedEvents = buildImportEvents(pendingImport.data.events, current);
+      importedEvents.forEach((event) => markTimelineChange(event.id, "created", "import"));
+      const nextEvents = [...current, ...importedEvents];
+      if (selectedTimelineSource === SOURCE_TYPES.SYNCED_MOCK) {
+        mockSyncedTimelineSource.saveEvents(null, nextEvents);
+        mockRevisionRef.current = mockSyncedTimelineSource.getRevision();
+      }
+      return nextEvents;
+    });
+    setTags((current) => {
+      const nextTags = uniqueByName([...current, ...pendingImport.data.tags]);
+      if (selectedTimelineSource === SOURCE_TYPES.SYNCED_MOCK) mockSyncedTimelineSource.saveTags(null, nextTags);
+      return nextTags;
+    });
+    setPlannedGames((current) => {
+      const nextGames = uniqueByName([...current, ...pendingImport.data.plannedGames]);
+      if (selectedTimelineSource === SOURCE_TYPES.SYNCED_MOCK) mockSyncedTimelineSource.savePlannedGames(null, nextGames);
+      return nextGames;
+    });
     setKnownSecretIds((current) => uniqueByName([...current, ...pendingImport.data.knownSecrets]));
     setUnlockedAchievementIds((current) => uniqueByName([...current, ...pendingImport.data.achievements]));
+    setSyncStatus(mockSyncedTimelineSource.getStatus());
     setPendingImport(null);
     showSystemToast("Import merged. The timeline absorbed more evidence.");
   }
 
+  function importAsNewTimeline() {
+    if (!pendingImport?.data) return;
+    const sourceName = pendingImport.summary?.timelineName || "Imported Timeline";
+    const suffix = pendingImport.summary?.isExampleExport ? " Example Import" : " Import";
+    const importedEvents = buildImportEvents(pendingImport.data.events, []);
+    const timeline = createLocalTimeline(`${sourceName}${suffix}`, {
+      events: importedEvents,
+      tags: uniqueByName([...defaultTags, ...pendingImport.data.tags]),
+      plannedGames: uniqueByName(pendingImport.data.plannedGames),
+    });
+    setKnownSecretIds((current) => uniqueByName([...current, ...pendingImport.data.knownSecrets]));
+    setUnlockedAchievementIds((current) => uniqueByName([...current, ...pendingImport.data.achievements]));
+    importedEvents.forEach((event) => markTimelineChange(event.id, "created", "import"));
+    setPendingImport(null);
+    showSystemToast(`Imported as ${timeline.name}. The current timeline was spared.`);
+  }
+
   function replaceImport() {
     if (!pendingImport?.data) return;
+    if (!canEditCurrentTimeline) {
+      showSystemToast(readOnlyReason || "This timeline is view-only. Replace denied before history got splattered.");
+      return;
+    }
 
-    setDisasters(buildImportEvents(pendingImport.data.events, []));
-    setTags(uniqueByName([...defaultTags, ...pendingImport.data.tags]));
-    setPlannedGames(uniqueByName(pendingImport.data.plannedGames));
+    const nextEvents = buildImportEvents(pendingImport.data.events, []);
+    nextEvents.forEach((event) => markTimelineChange(event.id, "created", "import"));
+
+    if (exampleMode) {
+      setExampleSessionEvents(nextEvents);
+    } else {
+      setDisasters(nextEvents);
+      if (selectedTimelineSource === SOURCE_TYPES.SYNCED_MOCK) {
+        mockSyncedTimelineSource.saveEvents(null, nextEvents);
+        mockRevisionRef.current = mockSyncedTimelineSource.getRevision();
+      }
+    }
+
+    const nextTags = uniqueByName([...defaultTags, ...pendingImport.data.tags]);
+    const nextPlannedGames = uniqueByName(pendingImport.data.plannedGames);
+    setTags(nextTags);
+    setPlannedGames(nextPlannedGames);
+    if (selectedTimelineSource === SOURCE_TYPES.SYNCED_MOCK && !exampleMode) {
+      mockSyncedTimelineSource.saveTags(null, nextTags);
+      mockSyncedTimelineSource.savePlannedGames(null, nextPlannedGames);
+      setSyncStatus(mockSyncedTimelineSource.getStatus());
+    }
     setKnownSecretIds((current) => uniqueByName([...current, ...pendingImport.data.knownSecrets]));
     setUnlockedAchievementIds((current) => uniqueByName([...current, ...pendingImport.data.achievements]));
     setPendingImport(null);
-    setExampleMode(false);
-    setExampleSessionEvents([]);
     setDetailDisasterId(null);
     setShowForm(false);
     setEditingId(null);
@@ -830,6 +1272,11 @@ export default function App() {
 
   function resetWebsite() {
     clearAppStorage();
+    const resetLocal = localTimelineSource.ensureLocalTimelineStorage();
+    const activeId = resetLocal.activeTimelineId;
+    setSelectedTimelineSource(SOURCE_TYPES.LOCAL);
+    setLocalTimelines(resetLocal.timelines);
+    setActiveLocalTimelineId(activeId);
     setDisasters([]);
     setTags(defaultTags);
     setPlannedGames(defaultPlannedGames);
@@ -850,12 +1297,37 @@ export default function App() {
     setDetailDisasterId(null);
     setPendingDeleteId(null);
     setPendingImport(null);
+    setAccountOpen(false);
+    setMockAuthSession(null);
+    setSyncStatus(mockSyncedTimelineSource.getStatus());
+    setRecentTimelineChanges({});
     setExampleMediaItems((current) => {
       revokeObjectUrls(current);
       return [];
     });
     setExampleMediaStatus("");
     closeForm();
+    showSystemToast("Website data wiped. Only app-specific evidence was harmed.");
+  }
+
+  function loginMockAccount(username) {
+    const session = createMockSession(username);
+    setMockAuthSession(session);
+    return session;
+  }
+
+  function logoutMockAccount() {
+    setMockAuthSession(null);
+  }
+
+  function simulateRemoteUpdate() {
+    mockSyncedTimelineSource.simulateRemoteUpdate();
+    setSyncStatus((current) => ({
+      ...current,
+      label: "Checking...",
+      detail: "Checking shared timeline... yelling into localStorage.",
+    }));
+    showSystemToast("Simulated remote update queued. The next poll will act surprised.");
   }
 
   return (
@@ -869,6 +1341,9 @@ export default function App() {
             onOpenNodeWeb={openNodeWeb}
             adminMode={adminMode}
             onSecretBadgeClick={handleTitleBadgeClick}
+            onAdminLongPress={triggerAdminMode}
+            canEdit={canEditCurrentTimeline}
+            readOnlyReason={readOnlyReason}
           />
           <GamesPanel
             gameStats={gameStats}
@@ -878,17 +1353,25 @@ export default function App() {
           />
         </div>
 
-        {adminMode ? (
-          <div className="flex justify-end">
+        <div className="flex flex-wrap justify-end gap-3">
+          <button
+            type="button"
+            onClick={() => setAccountOpen(true)}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/15 bg-zinc-900/80 px-4 py-2 text-xs font-black uppercase tracking-widest text-zinc-50 transition hover:bg-zinc-800 focus:outline-none focus:ring-4 focus:ring-sky-300/25"
+          >
+            <UserRound className="h-4 w-4" aria-hidden="true" />
+            {mockAuthSession ? mockAuthSession.username : "Account"}
+          </button>
+          {adminMode ? (
             <button
               type="button"
               onClick={() => setAdminPanelOpen(true)}
-              className="rounded-full border border-sky-300/30 bg-sky-500/15 px-4 py-2 text-xs font-black uppercase tracking-widest text-sky-50 transition hover:bg-sky-500/25 focus:outline-none focus:ring-4 focus:ring-sky-300/25"
+              className="min-h-11 rounded-full border border-sky-300/30 bg-sky-500/15 px-4 py-2 text-xs font-black uppercase tracking-widest text-sky-50 transition hover:bg-sky-500/25 focus:outline-none focus:ring-4 focus:ring-sky-300/25"
             >
               ADMIN
             </button>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
 
         {exampleMode ? (
           <ExampleModeBanner
@@ -925,6 +1408,24 @@ export default function App() {
           onDelete={requestDeleteDisaster}
           onOpenDetail={setDetailDisasterId}
           onReorderYear={reorderYear}
+          sourceSelector={
+            <TimelineSourceSelector
+              selectedSource={activeSource}
+              localTimelines={localTimelines}
+              activeLocalTimelineId={activeLocalTimelineId}
+              activeTimelineName={activeTimelineMetadata?.name}
+              sourceStatus={syncStatus}
+              onSelectSource={selectTimelineSource}
+              onSwitchLocalTimeline={switchLocalTimeline}
+              onCreateLocalTimeline={createLocalTimeline}
+              onRenameLocalTimeline={renameLocalTimeline}
+              onDuplicateLocalTimeline={duplicateLocalTimeline}
+              onDeleteLocalTimeline={deleteLocalTimeline}
+            />
+          }
+          recentChanges={recentTimelineChanges}
+          canEdit={canEditCurrentTimeline}
+          readOnlyReason={readOnlyReason}
         />
       </main>
 
@@ -965,6 +1466,7 @@ export default function App() {
             onEdit={openEditForm}
             onDelete={requestDeleteDisaster}
             onOpenNodeWeb={openNodeWeb}
+            canEdit={canEditCurrentTimeline}
           />
         ) : null}
       </AnimatePresence>
@@ -995,10 +1497,12 @@ export default function App() {
             onExportTimeline={exportRealTimeline}
             onImportTimeline={requestImportTimeline}
             onReset={resetWebsite}
+            onSimulateRemoteUpdate={simulateRemoteUpdate}
             exampleMode={exampleMode}
             counts={{
-              disasters: disasters.length,
+              disasters: displayDisasters.length,
               achievements: unlockedAchievementIds.length,
+              mode: activeSource === SOURCE_TYPES.SYNCED_MOCK ? "Mock Sync" : activeSource === SOURCE_TYPES.EXAMPLE ? "Example" : "Local",
             }}
           />
         ) : null}
@@ -1010,10 +1514,21 @@ export default function App() {
             knownSecretIds={knownSecretIds}
             onOpenAchievements={() => triggerFromAdmin(openAchievementsWindow)}
             onOpenNodeWeb={() => triggerFromAdmin(openNodeWeb)}
+            onTriggerAgeGate={() => triggerFromAdmin(triggerManualAgeGate)}
             onShowTos={() => triggerFromAdmin(() => showTosBar(true))}
             onTriggerCaptcha={() => triggerFromAdmin(triggerManualCaptcha)}
             onTriggerAd={() => triggerFromAdmin(() => triggerFakeAd(true))}
             onTriggerOrb={() => triggerFromAdmin(triggerManualOrb)}
+          />
+        ) : null}
+      </AnimatePresence>
+      <AnimatePresence>
+        {accountOpen ? (
+          <AccountWindow
+            session={mockAuthSession}
+            onLogin={loginMockAccount}
+            onLogout={logoutMockAccount}
+            onClose={() => setAccountOpen(false)}
           />
         ) : null}
       </AnimatePresence>
@@ -1065,6 +1580,7 @@ export default function App() {
         {pendingImport ? (
           <ImportPreviewWindow
             importResult={pendingImport}
+            onImportAsNew={importAsNewTimeline}
             onMerge={mergeImport}
             onReplace={replaceImport}
             onCancel={() => setPendingImport(null)}

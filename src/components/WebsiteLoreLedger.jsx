@@ -20,6 +20,7 @@ export default function WebsiteLoreLedger({
   knownSecretIds = [],
   onOpenAchievements,
   onOpenNodeWeb,
+  onTriggerAgeGate,
   onShowTos,
   onTriggerCaptcha,
   onTriggerAd,
@@ -107,6 +108,13 @@ export default function WebsiteLoreLedger({
               className="rounded-2xl border border-red-200/25 bg-red-500/15 px-4 py-3 text-sm font-black text-red-50 transition hover:bg-red-500/25 focus:outline-none focus:ring-4 focus:ring-red-300/25"
             >
               Show ToS
+            </button>
+            <button
+              type="button"
+              onClick={onTriggerAgeGate}
+              className="rounded-2xl border border-sky-200/25 bg-sky-500/15 px-4 py-3 text-sm font-black text-sky-50 transition hover:bg-sky-500/25 focus:outline-none focus:ring-4 focus:ring-sky-300/25"
+            >
+              Trigger ID Popup
             </button>
             <button
               type="button"

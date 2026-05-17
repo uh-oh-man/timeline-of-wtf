@@ -8,6 +8,7 @@ export const exampleTimeline = [
     title: "The Raccoon City Oopsie",
     source: "Resident Evil",
     tag: "Actually Kinda Works",
+    accentColor: "#22d3ee",
     summary: "Umbrella learns that secure underground lab and ethics committee were apparently optional settings.",
     connections: [
       "First recorded case of a corporation solving one problem by creating eighteen worse ones.",
@@ -23,6 +24,7 @@ export const exampleTimeline = [
     title: "Black Mesa Presses The Science Button",
     source: "Half-Life",
     tag: "Corporate Did It",
+    accentColor: "#ef4444",
     summary: "A research facility turns 'probably fine' into a workplace incident with interdimensional consequences.",
     connections: [
       "Portal research quietly takes notes while pretending this is unrelated.",
@@ -38,6 +40,7 @@ export const exampleTimeline = [
     title: "The Parasite Exchange Program",
     source: "Resident Evil 4",
     tag: "Canon Until Proven Sober",
+    accentColor: "#a78bfa",
     summary: "Leon finds a village running on cult energy, bad vibes, and parasite spaghetti. Historians later classify this as Europe having a normal one.",
     connections: [
       "Parasite notes later appear in classified biotech research, because nobody in this universe can leave glowing science alone.",
@@ -53,6 +56,7 @@ export const exampleTimeline = [
     title: "The Cake-Based Ethics Collapse",
     source: "Portal / Aperture Science",
     tag: "Corporate Did It",
+    accentColor: "#f59e0b",
     summary: "Aperture discovers that if you call it science, you can put almost anything in a test chamber and HR stops asking questions.",
     connections: [
       "The portal gun becomes the first weaponized form of 'I do not feel like walking.'",
@@ -68,6 +72,7 @@ export const exampleTimeline = [
     title: "Mushroom Court Is Now In Session",
     source: "The Last of Us",
     tag: "Suspiciously Plausible",
+    accentColor: "#22c55e",
     summary: "Cordyceps looks at humanity and decides the patch notes are overdue.",
     connections: [
       "Governments respond poorly because apparently nobody read the previous zombie memo.",
@@ -83,6 +88,7 @@ export const exampleTimeline = [
     title: "The Great Brick Economy",
     source: "The Last of Us",
     tag: "We Were Tired",
+    accentColor: "#3b82f6",
     summary: "After civilization collapses, bricks become currency, weapons, therapy, and occasionally diplomacy.",
     connections: [
       "Economists remain divided because most of them got bitten.",
@@ -98,6 +104,7 @@ export const exampleTimeline = [
     title: "Mars HR Receives A Complaint Written In Shotgun",
     source: "Doom",
     tag: "Orb Approved",
+    accentColor: "#ef4444",
     summary: "Demonic invasion begins after scientists open a portal to Hell, which is exactly why the safety meeting should have been mandatory.",
     connections: [
       "Portal research gets banned for 11 minutes before someone rebrands it as defense infrastructure.",
@@ -113,6 +120,7 @@ export const exampleTimeline = [
     title: "Vault-Tec Discovers The Power Of Being The Problem",
     source: "Fallout",
     tag: "Corporate Did It",
+    accentColor: "#f59e0b",
     summary: "A company builds vaults to save humanity, then immediately asks what if we made them terrible on purpose?",
     connections: [
       "The corporate playbook survives longer than several governments.",
@@ -128,6 +136,7 @@ export const exampleTimeline = [
     title: "The Federal Bureau Of Weird Shit Opens A Folder",
     source: "Control",
     tag: "Don't Question It",
+    accentColor: "#a78bfa",
     summary: "An office building eats physics and everyone acts like this is just another Tuesday with worse fluorescent lighting.",
     connections: [
       "Object-of-power research quietly becomes the foundation for every future 'we found a glowing thing' disaster.",
@@ -143,6 +152,7 @@ export const exampleTimeline = [
     title: "Subscription-Based Arm Ownership",
     source: "Cyberpunk 2077",
     tag: "100% Bullshit Canon",
+    accentColor: "#22d3ee",
     summary: "Night City proves that if corporations can install a weapon in your elbow, they can absolutely charge a monthly fee for it.",
     connections: [
       "Early biotech scandals get rebranded as consumer enhancement.",
@@ -158,6 +168,7 @@ export const exampleTimeline = [
     title: "The Emotional Support Pistol",
     source: "Cyberpunk 2077",
     tag: "Friend Disputed This",
+    accentColor: "#3b82f6",
     summary: "A gun with more personality than most politicians becomes evidence that Night City should not be allowed to invent anything.",
     connections: [
       "AI personality fragments begin leaking into military tech archives.",
@@ -173,6 +184,7 @@ export const exampleTimeline = [
     title: "The Marker Starts A Group Chat",
     source: "Dead Space",
     tag: "Too Dumb To Die",
+    accentColor: "#22c55e",
     summary: "Humanity finds an alien artifact whispering bad ideas and reacts by bringing it closer. Excellent work, team.",
     connections: [
       "Do not touch the cursed object remains the least followed instruction in history.",
@@ -188,6 +200,7 @@ export const exampleTimeline = [
     title: "Helmet Diplomacy Enters The Chat",
     source: "Halo",
     tag: "Actually Kinda Works",
+    accentColor: "#3b82f6",
     summary: "Humanity reaches space and immediately discovers aliens, ancient rings, and the strategic value of one very quiet guy in green armor.",
     connections: [
       "Military augmentation finally evolves from questionable medical program into load-bearing plot device.",
@@ -203,6 +216,7 @@ export const exampleTimeline = [
     title: "The Ring Was Not A Wedding Venue",
     source: "Halo",
     tag: "Cutscene Skipped",
+    accentColor: "#f59e0b",
     summary: "Someone sees a giant ancient ringworld and somehow the first instinct is to press buttons. Classic.",
     connections: [
       "Ancient superweapons are filed under probably fine.",
@@ -218,6 +232,7 @@ export const exampleTimeline = [
     title: "Humanity Learns Absolutely Nothing",
     source: "Warhammer 40K",
     tag: "Too Dumb To Die",
+    accentColor: "#ef4444",
     summary: "After thousands of years, humanity has solved none of its problems but has added skulls to everything, which apparently counts as branding.",
     connections: [
       "Every bad idea from the earlier timeline gets declared holy and given a cathedral.",
@@ -233,6 +248,7 @@ export const exampleTimeline = [
     title: "The Skull-Based Economy Stabilizes",
     source: "Warhammer 40K",
     tag: "Load-Bearing Bullshit",
+    accentColor: "#a78bfa",
     summary: "Economic experts remain baffled, mostly because the spreadsheets are carved into bones and screaming.",
     connections: [
       "Branding consultants describe it as aggressive but memorable.",

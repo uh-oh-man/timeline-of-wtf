@@ -1,4 +1,5 @@
 import { createId, uniqueByName } from "./helpers";
+import { normalizeHexColor } from "./colorUtils";
 
 export const EXPORT_SCHEMA = "twtaf.timeline.export";
 export const CURRENT_EXPORT_VERSION = 1;
@@ -72,6 +73,7 @@ export function normalizeImportedEvent(event, index = 0) {
     connections,
     directConnections,
     media,
+    accentColor,
     sortOrder,
     orderInYear,
     createdAt,
@@ -91,6 +93,7 @@ export function normalizeImportedEvent(event, index = 0) {
     connections: normalizeStringList(connections),
     directConnections: normalizeStringList(directConnections),
     media: normalizeImportedMedia(media, nextId),
+    ...(normalizeHexColor(accentColor) ? { accentColor: normalizeHexColor(accentColor) } : {}),
     sortOrder: Number.isFinite(Number(sortOrder))
       ? Number(sortOrder)
       : Number.isFinite(Number(orderInYear))
@@ -172,6 +175,9 @@ export function migrateImportPayload(payload) {
     "appName",
     "createdAt",
     "storageVersion",
+    "timelineType",
+    "isExampleExport",
+    "timeline",
     "mediaIncluded",
     "mediaNote",
     "data",
@@ -206,6 +212,9 @@ export function migrateImportPayload(payload) {
       createdAt: payload.createdAt || "",
       exportVersion: payload.exportVersion || "legacy",
       storageVersion: payload.storageVersion || "legacy",
+      timelineType: payload.timelineType || payload.timeline?.type || "local",
+      timelineName: payload.timeline?.name || "Imported Timeline",
+      isExampleExport: Boolean(payload.isExampleExport || payload.timelineType === "example" || payload.timeline?.type === "example"),
       mediaIncluded: Boolean(payload.mediaIncluded),
       mediaReferenceCount,
       eventCount: normalizedEvents.length,
@@ -242,26 +251,44 @@ export function exportTimelineData({
   plannedGames = [],
   knownSecrets = [],
   achievements = [],
+  timeline = null,
+  timelineType = "local",
+  isExampleExport = false,
   createdAt = new Date().toISOString(),
 } = {}) {
   const safeEvents = cloneJsonSafe(events).map((event) => ({
     ...event,
+    ...(normalizeHexColor(event?.accentColor) ? { accentColor: normalizeHexColor(event.accentColor) } : {}),
     media: asArray(event.media).map(stripSessionOnlyMediaFields),
   }));
+  const safeTimeline = timeline && typeof timeline === "object"
+    ? cloneJsonSafe(timeline)
+    : {
+        id: timelineType === "example" ? "example" : "local-active",
+        name: timelineType === "example" ? "Example Timeline" : "Local Timeline",
+        type: timelineType,
+      };
   const payload = {
     schema: EXPORT_SCHEMA,
     exportVersion: CURRENT_EXPORT_VERSION,
     appName: "The Timeline of What The Fuck",
     createdAt,
     storageVersion: CURRENT_STORAGE_VERSION,
+    timelineType,
+    ...(isExampleExport ? { isExampleExport: true } : {}),
     mediaIncluded: false,
-    mediaNote: MEDIA_NOT_INCLUDED_NOTE,
+    mediaNote: isExampleExport
+      ? "Photos/videos are not included. Example media references may not work outside this demo environment."
+      : MEDIA_NOT_INCLUDED_NOTE,
+    timeline: safeTimeline,
     data: {
       events: safeEvents,
       tags: cloneJsonSafe(tags) || [],
       plannedGames: cloneJsonSafe(plannedGames) || [],
-      knownSecrets: cloneJsonSafe(knownSecrets) || [],
-      achievements: cloneJsonSafe(achievements) || [],
+      ...(isExampleExport ? {} : {
+        knownSecrets: cloneJsonSafe(knownSecrets) || [],
+        achievements: cloneJsonSafe(achievements) || [],
+      }),
     },
   };
   const header = [
@@ -269,8 +296,11 @@ export function exportTimelineData({
     "App: The Timeline of What The Fuck",
     "Format: .uhoh",
     `Export Version: ${CURRENT_EXPORT_VERSION}`,
+    `Timeline Type: ${isExampleExport ? "Example / Demo" : timelineType}`,
     `Created: ${createdAt}`,
-    "Warning: This file contains timeline disasters, tags, planned games, and optional metadata. Photos/videos are NOT included yet.",
+    isExampleExport
+      ? "Warning: This is an Example Timeline export used for testing. Photos/videos are NOT included."
+      : "Warning: This file contains timeline disasters, tags, planned games, and optional metadata. Photos/videos are NOT included yet.",
     "Do not edit below this line unless you enjoy breaking things.",
     UHOH_DATA_MARKER,
     "",

@@ -1,4 +1,13 @@
-import { createId } from "./helpers";
+import {
+  ensureLocalTimelineStorage,
+  getActiveTimelineId,
+  listEvents,
+  listPlannedGames,
+  listTags,
+  saveEvents,
+  savePlannedGames as saveTimelinePlannedGames,
+  saveTags as saveTimelineTags,
+} from "../services/timelineSources/localTimelineSource";
 
 const STORAGE_KEYS = {
   disasters: "twtaf:events",
@@ -10,6 +19,16 @@ const STORAGE_KEYS = {
   tosDismissed: "twtaf:tosDismissed",
   adminMode: "twtaf:adminMode",
   exampleMode: "twtaf:exampleMode",
+  selectedTimelineSource: "twtaf:selectedTimelineSource",
+  timelineIndex: "twtaf:timelineIndex",
+  activeTimelineId: "twtaf:activeTimelineId",
+  migratedSingleTimeline: "twtaf:migratedSingleTimeline",
+  mockAuthSession: "twtaf:mockAuthSession",
+  mockSyncedEvents: "twtaf:mockSyncedTimeline:events",
+  mockSyncedTags: "twtaf:mockSyncedTimeline:tags",
+  mockSyncedPlannedGames: "twtaf:mockSyncedTimeline:plannedGames",
+  mockSyncedUpdatedAt: "twtaf:mockSyncedTimeline:updatedAt",
+  mockSyncedRevision: "twtaf:mockSyncedTimeline:revision",
 };
 
 const LEGACY_KEYS = {
@@ -72,50 +91,33 @@ function saveObject(key, value) {
 }
 
 export function loadDisasters() {
-  const orderByYear = new Map();
-
-  return loadList(STORAGE_KEYS.disasters, [], LEGACY_KEYS.disasters).map((disaster) => {
-    const year = disaster.year || "";
-    const key = String(year).trim().toLowerCase();
-    const fallbackOrder = orderByYear.get(key) || 0;
-    orderByYear.set(key, fallbackOrder + 1);
-
-    return {
-      id: disaster.id || createId(),
-      year,
-      title: disaster.title || "",
-      source: disaster.source || "",
-      tag: disaster.tag || "",
-      summary: disaster.summary || "",
-      connections: Array.isArray(disaster.connections) ? disaster.connections : [],
-      directConnections: Array.isArray(disaster.directConnections) ? disaster.directConnections : [],
-      media: Array.isArray(disaster.media) ? disaster.media : [],
-      sortOrder: Number.isFinite(Number(disaster.sortOrder)) ? Number(disaster.sortOrder) : fallbackOrder,
-    };
-  });
+  ensureLocalTimelineStorage();
+  return listEvents(getActiveTimelineId());
 }
 
 export function saveDisasters(disasters) {
-  saveList(STORAGE_KEYS.disasters, disasters);
+  ensureLocalTimelineStorage();
+  saveEvents(getActiveTimelineId(), disasters);
 }
 
 export function loadTags(defaultTags) {
-  const storedTags = loadList(STORAGE_KEYS.tags, null, LEGACY_KEYS.tags);
-  if (storedTags === null) return defaultTags;
-
-  return [...new Set([...defaultTags, ...storedTags].filter(Boolean))];
+  ensureLocalTimelineStorage();
+  return listTags(getActiveTimelineId(), defaultTags);
 }
 
 export function saveTags(tags) {
-  saveList(STORAGE_KEYS.tags, tags);
+  ensureLocalTimelineStorage();
+  saveTimelineTags(getActiveTimelineId(), tags);
 }
 
 export function loadPlannedGames(defaultPlannedGames) {
-  return loadList(STORAGE_KEYS.plannedGames, defaultPlannedGames, LEGACY_KEYS.plannedGames);
+  ensureLocalTimelineStorage();
+  return listPlannedGames(getActiveTimelineId(), defaultPlannedGames);
 }
 
 export function savePlannedGames(plannedGames) {
-  saveList(STORAGE_KEYS.plannedGames, plannedGames);
+  ensureLocalTimelineStorage();
+  saveTimelinePlannedGames(getActiveTimelineId(), plannedGames);
 }
 
 export function loadUnlockedAchievements() {
@@ -168,7 +170,8 @@ export function saveAdminMode(value) {
 export function clearAppStorage() {
   if (!canUseStorage()) return;
 
-  [...Object.values(STORAGE_KEYS), ...Object.values(LEGACY_KEYS)].forEach((key) => {
-    window.localStorage.removeItem(key);
-  });
+  Array.from({ length: window.localStorage.length }, (_, index) => window.localStorage.key(index))
+    .filter(Boolean)
+    .filter((key) => key.startsWith("twtaf:") || Object.values(LEGACY_KEYS).includes(key))
+    .forEach((key) => window.localStorage.removeItem(key));
 }

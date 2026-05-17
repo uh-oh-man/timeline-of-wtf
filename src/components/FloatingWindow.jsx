@@ -143,7 +143,7 @@ export default function FloatingWindow({
       <motion.div
         ref={windowRef}
         className={[
-          "pointer-events-auto flex max-h-[92vh] w-full flex-col overflow-hidden rounded-[1.6rem] border border-white/20 bg-zinc-950 text-zinc-100 shadow-2xl shadow-black",
+          "floating-window-shell pointer-events-auto flex max-h-[92vh] w-full flex-col overflow-hidden rounded-[1.6rem] border border-white/20 bg-zinc-950 text-zinc-100 shadow-2xl shadow-black",
           widthClass,
           windowClassName,
         ].join(" ")}

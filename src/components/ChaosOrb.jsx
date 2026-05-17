@@ -96,7 +96,7 @@ export default function ChaosOrb({ active, path, triggerKey, onComplete, onHover
     borderRadius: blobRadius,
   };
 
-  function handleOrbPointerEnter() {
+  function startOrbObservation() {
     if (!isIdle || active || hoverTimer.current) return;
 
     setHovering(true);
@@ -129,7 +129,9 @@ export default function ChaosOrb({ active, path, triggerKey, onComplete, onHover
                 ease: "anticipate",
               }
         }
-        onPointerEnter={handleOrbPointerEnter}
+        onPointerEnter={startOrbObservation}
+        onPointerDown={startOrbObservation}
+        onPointerUp={clearHoverIntent}
         onPointerLeave={clearHoverIntent}
         onPointerCancel={clearHoverIntent}
         onAnimationComplete={() => {

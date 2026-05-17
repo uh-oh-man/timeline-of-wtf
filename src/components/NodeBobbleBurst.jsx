@@ -1,15 +1,16 @@
 import { motion } from "framer-motion";
 
 const bubbleOffsets = [
-  { x: -18, y: -34, size: 9, color: "bg-cyan-200/80" },
-  { x: 10, y: -44, size: 7, color: "bg-red-200/80" },
-  { x: 30, y: -24, size: 11, color: "bg-sky-300/70" },
-  { x: -34, y: -18, size: 6, color: "bg-indigo-200/75" },
-  { x: 2, y: -58, size: 5, color: "bg-white/75" },
+  { x: -18, y: -34, size: 9 },
+  { x: 10, y: -44, size: 7 },
+  { x: 30, y: -24, size: 11 },
+  { x: -34, y: -18, size: 6 },
+  { x: 2, y: -58, size: 5 },
 ];
 
 export default function NodeBobbleBurst({ burst, graphWidth, graphHeight }) {
   if (!burst) return null;
+  const colors = Array.isArray(burst.colors) && burst.colors.length ? burst.colors : ["#22d3ee", "#ef4444", "#ffffff"];
 
   return (
     <motion.div
@@ -27,12 +28,14 @@ export default function NodeBobbleBurst({ burst, graphWidth, graphHeight }) {
       {bubbleOffsets.map((bubble, index) => (
         <motion.span
           key={`${burst.id}-${index}`}
-          className={`absolute rounded-full ${bubble.color} shadow-[0_0_16px_rgba(34,211,238,0.45)]`}
+          className="absolute rounded-full"
           style={{
             height: bubble.size,
             width: bubble.size,
             left: -bubble.size / 2,
             top: -bubble.size / 2,
+            backgroundColor: colors[index % colors.length],
+            boxShadow: `0 0 16px ${colors[index % colors.length]}88`,
           }}
           initial={{ x: 0, y: 0, scale: 0.4, opacity: 0 }}
           animate={{

@@ -5,6 +5,7 @@ import FloatingWindow from "./FloatingWindow";
 import NodeBobbleBurst from "./NodeBobbleBurst";
 import { nodeCollisionReactions } from "../data/nodeCollisionReactions";
 import { buildGameGraph } from "../utils/graphUtils";
+import { getGameNodeColor, mixHexColors } from "../utils/colorUtils";
 import { pickRandom } from "../utils/helpers";
 
 const NODE_BASH_ACHIEVEMENT_THRESHOLD = 7;
@@ -60,15 +61,19 @@ export default function NodeWebModal({ disasters, onClose, onNodeBashAchievement
     return fallback || { x: 0, y: 0 };
   }, [graph.nodes]);
 
-  const addBurst = useCallback((targetNodeId, point) => {
+  const addBurst = useCallback((draggedNodeId, targetNodeId, point) => {
     const showMessage = bashTracker.current.count % 2 === 0 || Math.random() < 0.28;
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const draggedColor = getGameNodeColor(draggedNodeId, disasters);
+    const targetColor = getGameNodeColor(targetNodeId, disasters);
+    const mixedColor = mixHexColors(draggedColor, targetColor);
     const burst = {
       id,
       nodeId: targetNodeId,
       x: point.x,
       y: point.y,
       message: showMessage ? pickRandom(nodeCollisionReactions) : "",
+      colors: [draggedColor, targetColor, mixedColor],
     };
 
     setBursts((current) => [...current.slice(-9), burst]);
@@ -76,7 +81,7 @@ export default function NodeWebModal({ disasters, onClose, onNodeBashAchievement
       setBursts((current) => current.filter((item) => item.id !== id));
     }, 1850);
     burstTimers.current.push(timer);
-  }, []);
+  }, [disasters]);
 
   const registerCollision = useCallback((draggedNodeId, draggedPoint) => {
     const now = performance.now();
@@ -100,7 +105,7 @@ export default function NodeWebModal({ disasters, onClose, onNodeBashAchievement
       ...current,
       [targetNode.id]: (current[targetNode.id] || 0) + 1,
     }));
-    addBurst(targetNode.id, targetPoint);
+    addBurst(draggedNodeId, targetNode.id, targetPoint);
 
     if (
       !bashTracker.current.achievementUnlocked &&
@@ -195,10 +200,11 @@ export default function NodeWebModal({ disasters, onClose, onNodeBashAchievement
             })}
           </svg>
 
-          {graph.nodes.map((node, index) => {
+          {graph.nodes.map((node) => {
             const point = getPoint(node.id);
             const isDragging = draggingNodeId === node.id;
             const bashCount = bashedNodes[node.id] || 0;
+            const nodeColor = getGameNodeColor(node.label, disasters);
 
             return (
               <div
@@ -216,9 +222,8 @@ export default function NodeWebModal({ disasters, onClose, onNodeBashAchievement
                   onPointerDown={(event) => handleNodePointerDown(event, node.id)}
                   className="flex h-24 w-24 touch-none select-none items-center justify-center rounded-full border-2 border-white/80 p-3 text-center text-xs font-black leading-4 text-white shadow-lg outline-none transition hover:border-red-100 hover:text-white focus:ring-4 focus:ring-sky-300/30"
                   style={{
-                  background: index % 2 === 0 ? "rgba(2,132,199,0.96)" : "rgba(220,38,38,0.94)",
-                  boxShadow:
-                    index % 2 === 0 ? "0 0 30px rgba(14,165,233,0.38)" : "0 0 30px rgba(220,38,38,0.38)",
+                  background: nodeColor,
+                  boxShadow: `0 0 30px ${nodeColor}66`,
                   cursor: isDragging ? "grabbing" : "grab",
                   }}
                   animate={
