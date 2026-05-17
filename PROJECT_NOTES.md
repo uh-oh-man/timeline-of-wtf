@@ -35,6 +35,105 @@ Recurring vibe: mock modern internet annoyance through fake lore bureaucracy, ID
 - Keep all dark-mode text readable: inputs, selects, modals, translucent bars, cards, buttons, and placeholders.
 - Everything is local only. No analytics, no server, no real tracking.
 
+## 2026-05-17 Architecture / Source / Polish Pass
+
+New files/components/services added:
+
+- `src/utils/colorUtils.js`
+- `src/utils/mockAuth.js`
+- `src/services/timelineSources/timelineSourceManager.js`
+- `src/services/timelineSources/localTimelineSource.js`
+- `src/services/timelineSources/mockSyncedTimelineSource.js`
+- `src/services/timelineSources/exampleTimelineSource.js`
+- `src/components/TimelineSourceSelector.jsx`
+- `src/components/AccountWindow.jsx`
+
+Admin Reset is now **Wipe** in user-facing UI. Wipe only removes app-specific `twtaf:*` keys and known legacy `twotf.*` keys; never clear unrelated browser storage.
+
+Disasters now support optional `accentColor`. Valid `#RGB`/`#RRGGBB` colors are normalized to `#RRGGBB`; invalid colors are dropped and the UI falls back to controlled theme/tag/game colors. Accent colors affect timeline cards, dots, top stripes, borders/glows, detail accents, Node Web node colors, and node collision particles. Node collision particles now use the dragged node color, target node color, and a mixed color from `mixHexColors()`.
+
+Timeline source architecture now exists as local/static/mock only:
+
+- `twtaf:selectedTimelineSource` stores `local`, `synced_mock`, or `example`.
+- `TimelineSourceSelector` opens from the timeline heading and lists Local Timelines, Shared Timelines, and Example.
+- `localTimelineSource` manages local timelines and old single-timeline migration.
+- `mockSyncedTimelineSource` simulates the future shared/real timeline using localStorage only.
+- `exampleTimelineSource` documents Example as its own source category.
+- No real network calls, Supabase, Firebase, Cloudflare, or backend sync exist yet.
+
+Multiple local timelines:
+
+- `twtaf:timelineIndex` stores local timeline metadata.
+- `twtaf:activeTimelineId` stores the active local timeline.
+- Per-timeline data keys are `twtaf:timeline:<timelineId>:events`, `:tags`, and `:plannedGames`.
+- Users can create, rename, duplicate, delete, and switch local timelines from the selector.
+- Deleting the final local timeline is blocked.
+- If old `twtaf:events`, `twtaf:tags`, or `twtaf:plannedGames` exist and no timeline index exists, migration creates one default Local Timeline, copies old data into per-timeline keys, sets active timeline, and marks `twtaf:migratedSingleTimeline = true`.
+- Old single-timeline keys are left in place as backup.
+
+App-wide data: achievements, known secrets, Admin mode, ToS flags, selected source, mock auth session, and general UI/source settings. Per-timeline data: disasters/events, tags, planned games, and future timeline media/settings metadata.
+
+Mock synced timeline:
+
+- Uses `twtaf:mockSyncedTimeline:events`, `:tags`, `:plannedGames`, `:updatedAt`, and `:revision`.
+- Represents the future Shared/Real Timeline.
+- Uses `SYNC_POLL_INTERVAL_MS = 7000`.
+- Polling starts only while viewing `synced_mock`, stops on source switch/unmount, checks revision/updatedAt, diffs IDs, and marks added/removed/updated entries for animations.
+- Admin Panel has `Simulate Remote Update`, which writes a fake event/revision locally for polling tests.
+- Synced timeline is view-only unless mock auth session has `canEditRealTimeline`.
+- Local timelines remain editable without login.
+- Example remains session-editable for testing.
+
+Mock account/login:
+
+- `AccountWindow` is frontend-only/static/mock.
+- Session key is `twtaf:mockAuthSession`.
+- Mock session shape: `{ username, role, canEditRealTimeline }`.
+- Fake Make Account uses joke-button reactions and does not create a real account.
+- No real credentials are stored or sent anywhere.
+- This is not security. Real auth must later be backend-enforced with backend-only password hashes/sessions/permissions.
+
+Future shared friend timelines are planned but not implemented. The selector architecture should later support Shared Timelines separate from Real Timeline, such as friend/joined timelines with backend `users`, `timelines`, `timeline_members`, and `events` tables.
+
+Example Timeline:
+
+- Example data now has varied controlled `accentColor` values.
+- Example Mode is the official feature test sandbox: same-year reorder clusters, custom colors, direct connections, generated/manual media, broken media, captions, tags, games, connection notes, scrolling, create/delete animations, Node Web, export/import, and media previews should be tested there first.
+- Example Timeline can be exported intentionally after warning.
+- Example exports use `timelineType: "example"` and `isExampleExport: true`, and include current session-only edits.
+- Import preview identifies Example exports and defaults to importing as a new local timeline.
+
+Export/import:
+
+- Export active timeline by default and include timeline metadata.
+- `.uhoh` payload includes `timelineType`, `timeline`, `mediaIncluded: false`, and normalized `accentColor`.
+- Import options: Import as New Local Timeline, Merge Into Current Timeline, Replace Current Timeline, Cancel.
+- Import as new local timeline is the safest/default path.
+- Photos/videos are still not included; imported media metadata is marked missing so placeholders render honestly.
+
+Touch/mobile:
+
+- Tap targets are larger on coarse pointers.
+- Timeline hover-only actions have touch-visible alternatives.
+- Floating windows clamp/fill better on small screens with safe-area-aware sizing.
+- Media lightbox supports swipe left/right.
+- Node Web nodes are touch-draggable and use `touch-none` on node handles without disabling page scroll globally.
+- Achievement toasts already support horizontal drag/swipe dismissal.
+
+Hidden touch access:
+
+- Typed triggers remain: `ID`, `nrop`, `Ads`, `ach`, `tos`, `cap`, `ADMIN`, `lore`.
+- Long-press the title badge `Officially unofficial canon. Legally stupid.` for about 4.5 seconds to enable Admin on touch.
+- In Admin mode, long-press/triple-tap the same badge to open Website Lore Ledger.
+- Website Lore Ledger acts as the touch hidden-feature control center: achievements, ID popup, ToS, CAPTCHA, fake ad, orb, and Node Web.
+- Idle orb supports pointer/touch hold panic trigger.
+
+Timeline animations:
+
+- Timeline cards use Framer Motion layout/AnimatePresence with stable disaster IDs.
+- Local create/delete, synced incoming/delete/update, import create, and Example create/delete get distinct badges/copy.
+- Reduced motion falls back to simpler fade/settle behavior.
+
 ## Current Key Files
 
 ```text
@@ -149,7 +248,7 @@ Use namespaced `localStorage` keys only:
 - `twtaf:adminMode`
 - `twtaf:exampleMode`
 
-Old `twotf.*` keys may be migrated/read for compatibility. Reset must only clear this app's own namespaced and legacy keys, never unrelated browser storage.
+Old `twotf.*` keys may be migrated/read for compatibility. Wipe must only clear this app's own namespaced and legacy keys, never unrelated browser storage.
 
 Persist:
 
@@ -535,13 +634,13 @@ Admin panel:
 - Has `Show ToS Bar` for testing.
 - Triggering popups/events from Admin Panel closes/minimizes Admin Panel first, then fires the action after a short delay.
 - Example Mode controls may stay visible so the animated media folder button can appear.
-- Has reset website flow with confirmation:
-  - Prompt: `This will nuke your local timeline like a BIOS update gone feral. Continue?`
-  - Buttons: `Nuke It` and `I Still Have Attachment Issues`
+- Has wipe website flow with confirmation:
+  - Prompt: `This will wipe your local timeline, achievements, secrets, settings, and app data like a BIOS update with anger issues. Continue?`
+  - Buttons: `Wipe It` and `Abort Wipe`
 
-Reset only clears this app's own localStorage keys and resets state to brand-new defaults.
+Wipe only clears this app's own localStorage keys and resets state to brand-new defaults.
 
-Do not auto-close Admin Panel before destructive/confirmation-based reset actions.
+Do not auto-close Admin Panel before destructive/confirmation-based wipe actions.
 
 ## Rare Event Rules
 
@@ -598,7 +697,7 @@ Purpose:
 
 - Some harmless joke/dismiss buttons have quick personality reactions before closing or responding.
 - This is subtle website micro-lore: the UI is petty, bureaucratic, orb-touched, nervous, dramatic, or weirdly happy.
-- Do not use this for destructive actions like Reset/Nuke/Delete unless there is a deliberate confirmation flow.
+- Do not use this for destructive actions like Wipe/Delete unless there is a deliberate confirmation flow.
 - Reactions should be quick, roughly 300-900ms, and not annoying.
 - Reactions are real visual/physical animations: wiggle/squish, shake, progress bar, scoot, orb glow/ring, or dramatic stamp.
 - Reaction text/stamps render through a body-level portal with high z-index so they are not clipped by FloatingWindow overflow.
