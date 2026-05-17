@@ -1,12 +1,16 @@
 import { Award, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export default function AchievementToast({ achievement, onClose }) {
+  const [isDragging, setIsDragging] = useState(false);
+  const [exitDirection, setExitDirection] = useState(1);
+
   useEffect(() => {
+    if (isDragging) return undefined;
     const timer = window.setTimeout(onClose, 4200);
     return () => window.clearTimeout(timer);
-  }, [onClose]);
+  }, [isDragging, onClose]);
 
   if (!achievement) return null;
 
@@ -15,8 +19,19 @@ export default function AchievementToast({ achievement, onClose }) {
       className="fixed bottom-5 right-5 z-[80] w-[min(25rem,calc(100vw-2rem))] overflow-hidden rounded-3xl border border-white/15 bg-zinc-950/94 text-zinc-100 shadow-2xl shadow-black/55 backdrop-blur"
       initial={{ opacity: 0, x: 42, scale: 0.94 }}
       animate={{ opacity: 1, x: 0, scale: 1 }}
-      exit={{ opacity: 0, x: 42, scale: 0.96 }}
+      exit={{ opacity: 0, x: exitDirection * 140, scale: 0.96 }}
       transition={{ type: "spring", stiffness: 300, damping: 24 }}
+      drag="x"
+      dragConstraints={{ left: 0, right: 0 }}
+      dragElastic={0.22}
+      onDragStart={() => setIsDragging(true)}
+      onDragEnd={(_, info) => {
+        setIsDragging(false);
+        if (Math.abs(info.offset.x) > 100) {
+          setExitDirection(info.offset.x < 0 ? -1 : 1);
+          onClose();
+        }
+      }}
     >
       <motion.div
         className="h-1 bg-gradient-to-r from-cyan-300 via-blue-400 to-red-400"

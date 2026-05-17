@@ -17,6 +17,7 @@ function Section({ icon: Icon, title, children }) {
 
 export default function WebsiteLoreLedger({
   onClose,
+  knownSecretIds = [],
   onOpenAchievements,
   onOpenNodeWeb,
   onShowTos,
@@ -24,6 +25,9 @@ export default function WebsiteLoreLedger({
   onTriggerAd,
   onTriggerOrb,
 }) {
+  const knownSecrets = new Set(knownSecretIds);
+  const discoveredSecretCount = secretRegistry.filter((secret) => knownSecrets.has(secret.id)).length;
+
   return (
     <FloatingWindow
       title="Website Lore Ledger"
@@ -35,6 +39,10 @@ export default function WebsiteLoreLedger({
     >
       <div className="grid gap-4">
         <Section icon={Keyboard} title="Known Typed Secrets / Secret Registry">
+          <p className="mb-3 rounded-2xl border border-white/10 bg-zinc-950/70 px-3 py-2 text-xs font-black text-sky-50">
+            {discoveredSecretCount} / {secretRegistry.length} discovered. Admin can see the full registry because the
+            archive has apparently given up on operational security.
+          </p>
           <div className="grid gap-3 md:grid-cols-2">
             {secretRegistry.map((secret) => (
               <article key={secret.id} className="rounded-2xl border border-sky-200/20 bg-sky-500/10 p-3">

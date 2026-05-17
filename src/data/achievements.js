@@ -24,6 +24,12 @@ export const achievements = [
     hidden: false,
   },
   {
+    id: "opened_achievements",
+    title: "Achievement For Achievements",
+    description: "Opened the achievement ledger. Yes, this counts. No, we are not proud.",
+    hidden: false,
+  },
+  {
     id: "triggered_age_gate",
     title: "Timeline Legal",
     description: "Manually summoned the fake ID police.",
@@ -75,6 +81,18 @@ export const achievements = [
     id: "button_whisperer",
     title: "Button Whisperer",
     description: "Discovered that some buttons have feelings. Unfortunately.",
+    hidden: true,
+  },
+  {
+    id: "orb_observer",
+    title: "Orb Observer",
+    description: "Stared at the background orb until it panicked.",
+    hidden: true,
+  },
+  {
+    id: "node_basher",
+    title: "Personal Space Violation",
+    description: "Repeatedly bashed one timeline node into another until the interface got uncomfortable.",
     hidden: true,
   },
   {

@@ -1,8 +1,39 @@
 import { motion, useDragControls } from "framer-motion";
 import { X } from "lucide-react";
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 const floatingWindowStack = [];
+const VIEWPORT_PADDING = 18;
+const MIN_VISIBLE_X = 104;
+const TITLE_BAR_SAFE_HEIGHT = 72;
+
+function getViewportCorrection(rect) {
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  let x = 0;
+  let y = 0;
+
+  if (rect.width <= viewportWidth - VIEWPORT_PADDING * 2) {
+    if (rect.left < VIEWPORT_PADDING) x = VIEWPORT_PADDING - rect.left;
+    if (rect.right > viewportWidth - VIEWPORT_PADDING) x = viewportWidth - VIEWPORT_PADDING - rect.right;
+  } else {
+    if (rect.left > VIEWPORT_PADDING) x = VIEWPORT_PADDING - rect.left;
+    if (rect.right < MIN_VISIBLE_X) x = MIN_VISIBLE_X - rect.right;
+  }
+
+  if (rect.left > viewportWidth - MIN_VISIBLE_X) x = viewportWidth - MIN_VISIBLE_X - rect.left;
+  if (rect.right < MIN_VISIBLE_X) x = MIN_VISIBLE_X - rect.right;
+
+  if (rect.top < VIEWPORT_PADDING) y = VIEWPORT_PADDING - rect.top;
+  if (rect.top > viewportHeight - TITLE_BAR_SAFE_HEIGHT) {
+    y = viewportHeight - TITLE_BAR_SAFE_HEIGHT - rect.top;
+  }
+  if (rect.bottom < VIEWPORT_PADDING + TITLE_BAR_SAFE_HEIGHT) {
+    y = VIEWPORT_PADDING - rect.top;
+  }
+
+  return { x, y };
+}
 
 export default function FloatingWindow({
   title,
@@ -17,10 +48,15 @@ export default function FloatingWindow({
   windowClassName = "",
   closeOnOutsideClick = true,
   closeOnEscape = true,
+  keepInViewport = true,
 }) {
   const dragControls = useDragControls();
   const windowRef = useRef(null);
   const windowId = useId();
+  const [position, setPosition] = useState(initialPosition);
+  const dragStartPosition = useRef(initialPosition);
+  const dragStartRect = useRef(null);
+  const lastRescueAt = useRef(0);
 
   useEffect(() => {
     floatingWindowStack.push(windowId);
@@ -60,6 +96,36 @@ export default function FloatingWindow({
     };
   }, [closeOnEscape, closeOnOutsideClick, onClose, windowId]);
 
+  function handleDragStart() {
+    dragStartPosition.current = position;
+    dragStartRect.current = windowRef.current?.getBoundingClientRect() || null;
+  }
+
+  function handleDragEnd(_, info) {
+    const rect = windowRef.current?.getBoundingClientRect();
+    const correction = keepInViewport && rect ? getViewportCorrection(rect) : { x: 0, y: 0 };
+    const visualOffset = rect && dragStartRect.current
+      ? {
+          x: rect.left - dragStartRect.current.left,
+          y: rect.top - dragStartRect.current.top,
+        }
+      : info.offset;
+    const nextPosition = {
+      x: dragStartPosition.current.x + visualOffset.x + correction.x,
+      y: dragStartPosition.current.y + visualOffset.y + correction.y,
+    };
+
+    setPosition(nextPosition);
+
+    if (Math.abs(correction.x) > 0.5 || Math.abs(correction.y) > 0.5) {
+      const now = Date.now();
+      if (now - lastRescueAt.current > 2200) {
+        lastRescueAt.current = now;
+        window.dispatchEvent(new window.CustomEvent("twtaf:window-rescued"));
+      }
+    }
+  }
+
   return (
     <motion.div
       className={[
@@ -86,9 +152,11 @@ export default function FloatingWindow({
         dragListener={false}
         dragMomentum={false}
         dragElastic={0.08}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
         initial={{ opacity: 0, scale: 0.96, x: initialPosition.x, y: initialPosition.y + 16 }}
-        animate={{ opacity: 1, scale: 1, x: initialPosition.x, y: initialPosition.y }}
-        exit={{ opacity: 0, scale: 0.96, y: initialPosition.y + 16 }}
+        animate={{ opacity: 1, scale: 1, x: position.x, y: position.y }}
+        exit={{ opacity: 0, scale: 0.96, y: position.y + 16 }}
         transition={{ type: "spring", stiffness: 220, damping: 22 }}
       >
         <div

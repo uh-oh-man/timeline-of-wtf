@@ -2,23 +2,46 @@ import { Cpu } from "lucide-react";
 import { motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FloatingWindow from "./FloatingWindow";
+import NodeBobbleBurst from "./NodeBobbleBurst";
+import { nodeCollisionReactions } from "../data/nodeCollisionReactions";
 import { buildGameGraph } from "../utils/graphUtils";
+import { pickRandom } from "../utils/helpers";
+
+const NODE_BASH_ACHIEVEMENT_THRESHOLD = 7;
+const NODE_COLLISION_DISTANCE = 92;
+const NODE_COLLISION_COOLDOWN = 430;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(value, max));
 }
 
-export default function NodeWebModal({ disasters, onClose }) {
+export default function NodeWebModal({ disasters, onClose, onNodeBashAchievement }) {
   const graph = useMemo(() => buildGameGraph(disasters), [disasters]);
   const graphRef = useRef(null);
+  const burstTimers = useRef([]);
+  const bashTracker = useRef({ count: 0, lastHitByPair: {}, achievementUnlocked: false });
+  const nodePositionsRef = useRef({});
   const [nodePositions, setNodePositions] = useState({});
   const [draggingNodeId, setDraggingNodeId] = useState(null);
+  const [bashedNodes, setBashedNodes] = useState({});
+  const [bursts, setBursts] = useState([]);
 
   useEffect(() => {
     setNodePositions(
       Object.fromEntries(graph.nodes.map((node) => [node.id, { x: node.x, y: node.y }])),
     );
   }, [graph.nodes]);
+
+  useEffect(() => {
+    nodePositionsRef.current = nodePositions;
+  }, [nodePositions]);
+
+  useEffect(() => {
+    return () => {
+      burstTimers.current.forEach((timer) => window.clearTimeout(timer));
+      burstTimers.current = [];
+    };
+  }, []);
 
   const pointFromPointer = useCallback((event) => {
     const rect = graphRef.current?.getBoundingClientRect();
@@ -30,6 +53,64 @@ export default function NodeWebModal({ disasters, onClose }) {
     };
   }, [graph.height, graph.width]);
 
+  const getPoint = useCallback((nodeId) => {
+    const point = nodePositionsRef.current[nodeId];
+    if (point) return point;
+    const fallback = graph.nodes.find((node) => node.id === nodeId);
+    return fallback || { x: 0, y: 0 };
+  }, [graph.nodes]);
+
+  const addBurst = useCallback((targetNodeId, point) => {
+    const showMessage = bashTracker.current.count % 2 === 0 || Math.random() < 0.28;
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const burst = {
+      id,
+      nodeId: targetNodeId,
+      x: point.x,
+      y: point.y,
+      message: showMessage ? pickRandom(nodeCollisionReactions) : "",
+    };
+
+    setBursts((current) => [...current.slice(-9), burst]);
+    const timer = window.setTimeout(() => {
+      setBursts((current) => current.filter((item) => item.id !== id));
+    }, 1850);
+    burstTimers.current.push(timer);
+  }, []);
+
+  const registerCollision = useCallback((draggedNodeId, draggedPoint) => {
+    const now = performance.now();
+    const targetNode = graph.nodes.find((node) => {
+      if (node.id === draggedNodeId) return false;
+      const targetPoint = getPoint(node.id);
+      const distance = Math.hypot(draggedPoint.x - targetPoint.x, draggedPoint.y - targetPoint.y);
+      return distance <= NODE_COLLISION_DISTANCE;
+    });
+
+    if (!targetNode) return;
+
+    const pairKey = `${draggedNodeId}->${targetNode.id}`;
+    const lastHit = bashTracker.current.lastHitByPair[pairKey] || 0;
+    if (now - lastHit < NODE_COLLISION_COOLDOWN) return;
+
+    const targetPoint = getPoint(targetNode.id);
+    bashTracker.current.lastHitByPair[pairKey] = now;
+    bashTracker.current.count += 1;
+    setBashedNodes((current) => ({
+      ...current,
+      [targetNode.id]: (current[targetNode.id] || 0) + 1,
+    }));
+    addBurst(targetNode.id, targetPoint);
+
+    if (
+      !bashTracker.current.achievementUnlocked &&
+      bashTracker.current.count >= NODE_BASH_ACHIEVEMENT_THRESHOLD
+    ) {
+      bashTracker.current.achievementUnlocked = true;
+      onNodeBashAchievement?.();
+    }
+  }, [addBurst, getPoint, graph.nodes, onNodeBashAchievement]);
+
   useEffect(() => {
     if (!draggingNodeId) return undefined;
 
@@ -40,6 +121,7 @@ export default function NodeWebModal({ disasters, onClose }) {
         ...current,
         [draggingNodeId]: nextPoint,
       }));
+      registerCollision(draggingNodeId, nextPoint);
     }
 
     function handlePointerUp() {
@@ -53,14 +135,7 @@ export default function NodeWebModal({ disasters, onClose }) {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
-  }, [draggingNodeId, pointFromPointer]);
-
-  function getPoint(nodeId) {
-    const point = nodePositions[nodeId];
-    if (point) return point;
-    const fallback = graph.nodes.find((node) => node.id === nodeId);
-    return fallback || { x: 0, y: 0 };
-  }
+  }, [draggingNodeId, pointFromPointer, registerCollision]);
 
   function handleNodePointerDown(event, nodeId) {
     event.preventDefault();
@@ -123,6 +198,7 @@ export default function NodeWebModal({ disasters, onClose }) {
           {graph.nodes.map((node, index) => {
             const point = getPoint(node.id);
             const isDragging = draggingNodeId === node.id;
+            const bashCount = bashedNodes[node.id] || 0;
 
             return (
               <div
@@ -145,14 +221,32 @@ export default function NodeWebModal({ disasters, onClose }) {
                     index % 2 === 0 ? "0 0 30px rgba(14,165,233,0.38)" : "0 0 30px rgba(220,38,38,0.38)",
                   cursor: isDragging ? "grabbing" : "grab",
                   }}
-                  animate={{ scale: isDragging ? 1.16 : 1 }}
-                  transition={{ type: "spring", stiffness: 260, damping: 18 }}
+                  animate={
+                    isDragging
+                      ? { scale: 1.16, rotate: 0 }
+                      : bashCount
+                        ? { scale: [1, 0.9, 1.13, 1], rotate: [0, -5, 5, 0] }
+                        : { scale: 1, rotate: 0 }
+                  }
+                  transition={
+                    isDragging
+                      ? { type: "spring", stiffness: 260, damping: 18 }
+                      : { duration: 0.42, ease: "easeOut" }
+                  }
                 >
                   {node.label.length > 24 ? `${node.label.slice(0, 24)}...` : node.label}
                 </motion.button>
               </div>
             );
           })}
+          {bursts.map((burst) => (
+            <NodeBobbleBurst
+              key={burst.id}
+              burst={burst}
+              graphWidth={graph.width}
+              graphHeight={graph.height}
+            />
+          ))}
         </div>
       ) : (
         <div className="mx-auto grid min-h-[520px] max-w-3xl place-items-center rounded-3xl border border-dashed border-white/20 bg-black/30 p-8 text-center">

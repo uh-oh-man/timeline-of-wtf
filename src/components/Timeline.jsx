@@ -1,12 +1,12 @@
 import { AnimatePresence, Reorder } from "framer-motion";
-import { Clock, Gamepad2, GripVertical, Network } from "lucide-react";
+import { Clock, Gamepad2, GripVertical } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import TimelineCard from "./TimelineCard";
 import TimelineToast from "./TimelineToast";
 import { futureDragWarnings, sameYearDragWarnings } from "../data/timelineWarnings";
 import { groupDisastersByYear, pickRandom } from "../utils/helpers";
 
-function TimelineShell({ children, onOpenNodeWeb, dragMode, onToggleDragMode, canReorder }) {
+function TimelineShell({ children, dragMode, onToggleDragMode, canReorder }) {
   return (
     <section className="mt-2" aria-label="Main timeline">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -14,25 +14,15 @@ function TimelineShell({ children, onOpenNodeWeb, dragMode, onToggleDragMode, ca
           <Clock className="h-6 w-6 text-sky-200" aria-hidden="true" />
           <h2 className="text-3xl font-black text-white">Main Timeline</h2>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={onToggleDragMode}
-            disabled={!canReorder}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/15 bg-zinc-900/80 px-4 py-3 text-sm font-black text-zinc-50 transition hover:bg-zinc-800 hover:text-white focus:outline-none focus:ring-4 focus:ring-sky-300/25 disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            <GripVertical className="h-5 w-5" aria-hidden="true" />
-            {dragMode ? "Exit Drag Mode" : "Timeline Drag Mode"}
-          </button>
-          <button
-            type="button"
-            onClick={onOpenNodeWeb}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/15 bg-zinc-900/80 px-4 py-3 text-sm font-black text-zinc-50 transition hover:bg-zinc-800 hover:text-white focus:outline-none focus:ring-4 focus:ring-sky-300/25"
-          >
-            <Network className="h-5 w-5" aria-hidden="true" />
-            View Live Web
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onToggleDragMode}
+          disabled={!canReorder}
+          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/15 bg-zinc-900/80 px-4 py-3 text-sm font-black text-zinc-50 transition hover:bg-zinc-800 hover:text-white focus:outline-none focus:ring-4 focus:ring-sky-300/25 disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          <GripVertical className="h-5 w-5" aria-hidden="true" />
+          {dragMode ? "Exit Drag Mode" : "Timeline Drag Mode"}
+        </button>
       </div>
       {dragMode ? (
         <p className="mb-5 rounded-3xl border border-sky-300/25 bg-sky-500/10 p-4 text-sm font-bold text-sky-50">
@@ -50,7 +40,6 @@ export default function Timeline({
   onEdit,
   onDelete,
   onOpenDetail,
-  onOpenNodeWeb,
   onReorderYear,
 }) {
   const [dragMode, setDragMode] = useState(false);
@@ -86,7 +75,6 @@ export default function Timeline({
   if (!hasTimeline) {
     return (
       <TimelineShell
-        onOpenNodeWeb={onOpenNodeWeb}
         dragMode={dragMode}
         onToggleDragMode={() => setDragMode((current) => !current)}
         canReorder={false}
@@ -105,7 +93,6 @@ export default function Timeline({
   if (!disasters.length) {
     return (
       <TimelineShell
-        onOpenNodeWeb={onOpenNodeWeb}
         dragMode={dragMode}
         onToggleDragMode={() => setDragMode((current) => !current)}
         canReorder={false}
@@ -122,7 +109,6 @@ export default function Timeline({
 
   return (
     <TimelineShell
-      onOpenNodeWeb={onOpenNodeWeb}
       dragMode={dragMode}
       onToggleDragMode={() => setDragMode((current) => !current)}
       canReorder={disasters.length > 1}

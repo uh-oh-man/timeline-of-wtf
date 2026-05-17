@@ -15,8 +15,10 @@ import FakeAdWindow from "./components/FakeAdWindow";
 import FakeCaptchaModal from "./components/FakeCaptchaModal";
 import GamesPanel from "./components/GamesPanel";
 import Header from "./components/Header";
+import ImportPreviewWindow from "./components/ImportPreviewWindow";
 import LongTosWindow from "./components/LongTosWindow";
 import NodeWebModal from "./components/NodeWebModal";
+import ReactionOverlayHost from "./components/ReactionOverlayHost";
 import SearchBar from "./components/SearchBar";
 import TermsBar from "./components/TermsBar";
 import Timeline from "./components/Timeline";
@@ -39,6 +41,12 @@ import { unlockAchievement } from "./utils/achievements";
 import { installKeyboardTriggers } from "./utils/keyboardTriggers";
 import { attachMediaToDisasters, distributeGeneratedMedia, filesToExampleMedia, revokeObjectUrls } from "./utils/mediaUtils";
 import { generateOrbEscapePath } from "./utils/orbUtils";
+import {
+  buildUhohFileName,
+  downloadUhohFile,
+  exportTimelineData,
+  parseTimelineImportFile,
+} from "./utils/exportImport";
 import {
   clearAppStorage,
   loadAdminMode,
@@ -89,6 +97,7 @@ export default function App() {
   const [detailDisasterId, setDetailDisasterId] = useState(null);
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
   const [loreLedgerOpen, setLoreLedgerOpen] = useState(false);
+  const [pendingImport, setPendingImport] = useState(null);
   const hasCheckedAgeGate = useRef(false);
   const hasCheckedAd = useRef(false);
   const hasCheckedTerms = useRef(false);
@@ -96,6 +105,7 @@ export default function App() {
   const canonClickTimes = useRef([]);
   const titleBadgeClickTimes = useRef([]);
   const exampleFileInputRef = useRef(null);
+  const importFileInputRef = useRef(null);
   const systemToastTimer = useRef(null);
   const footerMessage = useMemo(() => pickRandom(footerMessages), []);
 
@@ -152,7 +162,8 @@ export default function App() {
       loreLedgerOpen ||
       longTosOpen ||
       detailDisaster ||
-      pendingDeleteId,
+      pendingDeleteId ||
+      pendingImport,
   );
 
   useEffect(() => {
@@ -180,6 +191,22 @@ export default function App() {
     window.clearTimeout(systemToastTimer.current);
     systemToastTimer.current = window.setTimeout(() => setSystemToast(""), 2800);
   }, []);
+
+  useEffect(() => {
+    const rescueMessages = [
+      "Window containment restored.",
+      "Offscreen escape attempt denied.",
+      "The archive dragged that back before you lost it forever.",
+      "Nice try. The window has been returned from the void.",
+      "Floating window privileges temporarily questioned.",
+    ];
+    function handleWindowRescued() {
+      showSystemToast(pickRandom(rescueMessages));
+    }
+
+    window.addEventListener("twtaf:window-rescued", handleWindowRescued);
+    return () => window.removeEventListener("twtaf:window-rescued", handleWindowRescued);
+  }, [showSystemToast]);
 
   const unlock = useCallback((achievementId) => {
     setUnlockedAchievementIds((current) => {
@@ -227,6 +254,11 @@ export default function App() {
     unlock("triggered_orb");
   }, [discoverSecret, triggerOrb, unlock]);
 
+  const triggerObservedOrb = useCallback(() => {
+    triggerOrb();
+    unlock("orb_observer");
+  }, [triggerOrb, unlock]);
+
   const triggerFakeAd = useCallback(
     (manual = false) => {
       setFakeAd(pickRandom(fakeAds));
@@ -257,7 +289,8 @@ export default function App() {
 
   const openAchievementsWindow = useCallback(() => {
     setAchievementsOpen(true);
-  }, []);
+    unlock("opened_achievements");
+  }, [unlock]);
 
   const triggerAdminMode = useCallback(() => {
     discoverSecret("admin");
@@ -594,7 +627,7 @@ export default function App() {
 
     if (recentClicks.length >= 5) {
       canonClickTimes.current = [];
-      setAchievementsOpen(true);
+      openAchievementsWindow();
     }
   }
 
@@ -700,6 +733,101 @@ export default function App() {
     event.target.value = "";
   }
 
+  function buildImportEvents(importedEvents, existingEvents = []) {
+    const usedIds = new Set(existingEvents.map((event) => event.id).filter(Boolean));
+
+    return importedEvents.map((event) => {
+      const nextId = event.id && !usedIds.has(event.id) ? event.id : createId();
+      usedIds.add(nextId);
+
+      return {
+        ...event,
+        id: nextId,
+        media: Array.isArray(event.media)
+          ? event.media.map((media, index) => ({
+              ...media,
+              id: media.id || createId(),
+              disasterId: nextId,
+              order: Number.isFinite(Number(media.order)) ? Number(media.order) : index,
+            }))
+          : [],
+      };
+    });
+  }
+
+  function exportRealTimeline() {
+    if (exampleMode) {
+      showSystemToast("You are in Example Mode. Exporting fake demo nonsense is probably not what you meant. Using real local data instead.");
+    } else {
+      showSystemToast("Timeline exported. Media stayed home because evidence teleportation is still illegal.");
+    }
+
+    const createdAt = new Date().toISOString();
+    const text = exportTimelineData({
+      events: disasters,
+      tags,
+      plannedGames,
+      knownSecrets: knownSecretIds,
+      achievements: unlockedAchievementIds,
+      createdAt,
+    });
+    downloadUhohFile(text, buildUhohFileName(new Date(createdAt)));
+  }
+
+  function requestImportTimeline() {
+    if (exampleMode) {
+      showSystemToast("You are in Example Mode. Importing fake demo nonsense is probably not what you meant.");
+    }
+    importFileInputRef.current?.click();
+  }
+
+  async function selectImportFile(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const result = parseTimelineImportFile(text);
+      if (!result.valid) {
+        showSystemToast("The archive tried to read this file and immediately regretted it.");
+        return;
+      }
+      setPendingImport(result);
+    } catch {
+      showSystemToast("The archive tried to read this file and immediately regretted it.");
+    }
+  }
+
+  function mergeImport() {
+    if (!pendingImport?.data) return;
+
+    setDisasters((current) => [...current, ...buildImportEvents(pendingImport.data.events, current)]);
+    setTags((current) => uniqueByName([...current, ...pendingImport.data.tags]));
+    setPlannedGames((current) => uniqueByName([...current, ...pendingImport.data.plannedGames]));
+    setKnownSecretIds((current) => uniqueByName([...current, ...pendingImport.data.knownSecrets]));
+    setUnlockedAchievementIds((current) => uniqueByName([...current, ...pendingImport.data.achievements]));
+    setPendingImport(null);
+    showSystemToast("Import merged. The timeline absorbed more evidence.");
+  }
+
+  function replaceImport() {
+    if (!pendingImport?.data) return;
+
+    setDisasters(buildImportEvents(pendingImport.data.events, []));
+    setTags(uniqueByName([...defaultTags, ...pendingImport.data.tags]));
+    setPlannedGames(uniqueByName(pendingImport.data.plannedGames));
+    setKnownSecretIds((current) => uniqueByName([...current, ...pendingImport.data.knownSecrets]));
+    setUnlockedAchievementIds((current) => uniqueByName([...current, ...pendingImport.data.achievements]));
+    setPendingImport(null);
+    setExampleMode(false);
+    setExampleSessionEvents([]);
+    setDetailDisasterId(null);
+    setShowForm(false);
+    setEditingId(null);
+    showSystemToast("Timeline replaced. History has been legally rearranged.");
+  }
+
   function resetWebsite() {
     clearAppStorage();
     setDisasters([]);
@@ -721,6 +849,7 @@ export default function App() {
     setLongTosOpen(false);
     setDetailDisasterId(null);
     setPendingDeleteId(null);
+    setPendingImport(null);
     setExampleMediaItems((current) => {
       revokeObjectUrls(current);
       return [];
@@ -795,7 +924,6 @@ export default function App() {
           onEdit={openEditForm}
           onDelete={requestDeleteDisaster}
           onOpenDetail={setDetailDisasterId}
-          onOpenNodeWeb={openNodeWeb}
           onReorderYear={reorderYear}
         />
       </main>
@@ -815,7 +943,13 @@ export default function App() {
       </footer>
 
       <AnimatePresence>
-        {nodeWebOpen ? <NodeWebModal disasters={displayDisasters} onClose={() => setNodeWebOpen(false)} /> : null}
+        {nodeWebOpen ? (
+          <NodeWebModal
+            disasters={displayDisasters}
+            onClose={() => setNodeWebOpen(false)}
+            onNodeBashAchievement={() => unlock("node_basher")}
+          />
+        ) : null}
       </AnimatePresence>
       <AnimatePresence>
         {ageGateMessage ? <AgeGateModal message={ageGateMessage} onClose={() => setAgeGateMessage(null)} /> : null}
@@ -848,7 +982,7 @@ export default function App() {
         {adminPanelOpen ? (
           <AdminPanel
             onClose={() => setAdminPanelOpen(false)}
-            onOpenAchievements={() => triggerFromAdmin(() => setAchievementsOpen(true))}
+            onOpenAchievements={() => triggerFromAdmin(openAchievementsWindow)}
             onOpenLore={() => triggerFromAdmin(openWebsiteLoreLedger)}
             onOpenNodeWeb={() => triggerFromAdmin(openNodeWeb)}
             onShowTos={() => triggerFromAdmin(() => showTosBar(true))}
@@ -858,6 +992,8 @@ export default function App() {
             onEnterExampleMode={enterExampleMode}
             onExitExampleMode={exitExampleMode}
             onLoadExampleMediaFolder={loadExampleMediaFolder}
+            onExportTimeline={exportRealTimeline}
+            onImportTimeline={requestImportTimeline}
             onReset={resetWebsite}
             exampleMode={exampleMode}
             counts={{
@@ -871,7 +1007,8 @@ export default function App() {
         {loreLedgerOpen ? (
           <WebsiteLoreLedger
             onClose={() => setLoreLedgerOpen(false)}
-            onOpenAchievements={() => triggerFromAdmin(() => setAchievementsOpen(true))}
+            knownSecretIds={knownSecretIds}
+            onOpenAchievements={() => triggerFromAdmin(openAchievementsWindow)}
             onOpenNodeWeb={() => triggerFromAdmin(openNodeWeb)}
             onShowTos={() => triggerFromAdmin(() => showTosBar(true))}
             onTriggerCaptcha={() => triggerFromAdmin(triggerManualCaptcha)}
@@ -924,13 +1061,32 @@ export default function App() {
           />
         ) : null}
       </AnimatePresence>
+      <AnimatePresence>
+        {pendingImport ? (
+          <ImportPreviewWindow
+            importResult={pendingImport}
+            onMerge={mergeImport}
+            onReplace={replaceImport}
+            onCancel={() => setPendingImport(null)}
+          />
+        ) : null}
+      </AnimatePresence>
+      <input
+        ref={importFileInputRef}
+        type="file"
+        accept=".uhoh,.json,text/plain,application/json"
+        className="sr-only"
+        onChange={selectImportFile}
+      />
       <ChaosOrb
         active={orb.active}
         path={orb.path}
         triggerKey={orb.key}
         onComplete={() => setOrb((current) => ({ ...current, active: false }))}
+        onHoverTrigger={triggerObservedOrb}
       />
       <AdminModeOverlay active={adminAnimationActive} />
+      <ReactionOverlayHost />
     </div>
   );
 }

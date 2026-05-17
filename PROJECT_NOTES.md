@@ -53,6 +53,7 @@ src/
     fakeAds.js
     footerMessages.js
     generatedExampleMedia.js
+    nodeCollisionReactions.js
     secretRegistry.js
     tagStyles.js
     timelineWarnings.js
@@ -78,10 +79,13 @@ src/
     FloatingWindow.jsx
     GamesPanel.jsx
     Header.jsx
+    ImportPreviewWindow.jsx
     JokeButton.jsx
     LongTosWindow.jsx
     MediaLightbox.jsx
+    NodeBobbleBurst.jsx
     NodeWebModal.jsx
+    ReactionOverlayHost.jsx
     ReactionOverlay.jsx
     SearchBar.jsx
     TermsBar.jsx
@@ -96,6 +100,7 @@ src/
     keyboardTriggers.js
     mediaUtils.js
     orbUtils.js
+    exportImport.js
     storage.js
 scripts/
   generateExampleMediaManifest.js
@@ -158,6 +163,48 @@ Persist:
 
 Do not store raw photos/videos in localStorage. Future real media blobs/files should use IndexedDB. localStorage should only store metadata/IDs.
 
+## Export / Import
+
+Files:
+
+- `src/utils/exportImport.js`
+- `src/components/ImportPreviewWindow.jsx`
+
+The app has a future-proof text export/import system for real user timeline data using `.uhoh` files. Export/import operates on real local data, not Admin Example Mode session data. If the user starts the flow while Example Mode is active, warn that exporting/importing fake demo nonsense is probably not what they meant.
+
+`.uhoh` files use a readable header followed by JSON after the marker:
+
+```text
+--- UH OH TIMELINE EXPORT ---
+App: The Timeline of What The Fuck
+Format: .uhoh
+Export Version: 1
+Created: 2026-05-16T00:00:00.000Z
+Warning: This file contains timeline disasters, tags, planned games, and optional metadata. Photos/videos are NOT included yet.
+Do not edit below this line unless you enjoy breaking things.
+--- DATA ---
+```
+
+JSON payload rules:
+
+- `schema` is `twtaf.timeline.export`.
+- `exportVersion` is versioned with `CURRENT_EXPORT_VERSION`.
+- `storageVersion` is versioned with `CURRENT_STORAGE_VERSION`.
+- Export includes events/disasters, tags, planned games, known secrets, and achievements.
+- Photos/videos are not included yet. Export preserves lightweight media metadata but strips session-only URLs.
+- Imported media metadata is marked `storage: "missing-import-media"` and `missing: true` so the UI uses missing/broken evidence placeholders instead of pretending files exist.
+
+Import behavior:
+
+- Accept `.uhoh`, `.json`, `text/plain`, and `application/json`.
+- If `--- DATA ---` exists, parse JSON after it; otherwise try parsing the whole file.
+- Show `ImportPreviewWindow` before applying anything.
+- Preview shows app name, created date, export/storage versions, event/tag/future-game counts, media status, compatibility warnings, and whether unknown future fields exist.
+- `Merge Import` adds imported disasters, avoids duplicate event IDs, merges tags/planned games, and preserves current data.
+- `Replace Current Timeline` requires a second confirmation and replaces events/tags/planned games with imported data.
+- Import is best-effort and migration-based. Missing or old fields are normalized safely, and unknown future event fields are preserved where possible.
+- Invalid files show: `The archive tried to read this file and immediately regretted it.`
+
 ## Media Model
 
 Media metadata shape:
@@ -210,6 +257,7 @@ Current implementation supports display structure, Admin Example Mode media, and
 ### Timeline Drag Mode
 
 - The Main Timeline has a `Timeline Drag Mode` button.
+- The duplicate `View Live Web` button was removed from the timeline header. Keep the primary `Open Node Web` access in the hero/title card, plus Admin/detail-window access where relevant.
 - When off, timeline behaves normally and is sorted by year then `sortOrder`.
 - When on, each card shows a drag handle.
 - Reordering is only allowed inside the same year group.
@@ -356,6 +404,11 @@ Future tab:
 - Game nodes are draggable and keep their circle, label, and connected line endpoints synced.
 - Node web drag stores current node positions in React state and renders line endpoints from those same positions, avoiding transform-only desync.
 - Blue-to-red node/link styling is preferred.
+- Dragging one node into another detects collisions using current state-based node coordinates.
+- Valid node collisions are cooldown-limited so dragging over one node does not count every frame.
+- After enough repeated node bashes, unlock hidden achievement `node_basher` / `Personal Space Violation`.
+- Bashing a node creates `NodeBobbleBurst` bubbles and occasional randomized text from `src/data/nodeCollisionReactions.js`.
+- Collision effects are temporary and must not permanently alter graph layout.
 
 ## Background And Theme
 
@@ -412,11 +465,19 @@ Typed secrets are sourced from `src/data/secretRegistry.js`.
 
 Use localStorage key `twtaf:knownSecrets`.
 
-Inside the achievements window, show **Known Forbidden Inputs** only after at least one typed secret has been discovered or when admin mode is active.
+Inside the achievements window, show **Known Forbidden Inputs** with discovered secrets visible and undiscovered secrets redacted.
 
-Unknown secrets stay hidden unless admin mode is active.
+The achievements window shows hidden keyword progress like `3 / 8 discovered`.
+
+For normal/non-admin users, undiscovered registered secrets should not reveal trigger words. Render undiscovered entries as:
+
+- trigger: `???`
+- title: `Undiscovered input`
+- description: `The archive knows something you do not. Annoying, isn't it?`
 
 Admin mode shows all secrets, including `lore`.
+
+The Website Lore Ledger is admin-only and may show the full registry, but it should still show discovered-vs-total counts for clarity.
 
 Future hidden triggers should be added to `secretRegistry.js` so AchievementsWindow and Website Lore Ledger can display them without custom UI surgery.
 
@@ -469,6 +530,7 @@ Admin panel:
 - Can open achievements/secrets.
 - Can open Website Lore Ledger and Node Web.
 - Can enter/exit example timeline mode.
+- Has Data Management controls for `Export Timeline (.uhoh)` and `Import Timeline (.uhoh)`.
 - Shows an animated `Load Example Media Folder` button beside Example Mode controls when Example Mode is active.
 - Has `Show ToS Bar` for testing.
 - Triggering popups/events from Admin Panel closes/minimizes Admin Panel first, then fires the action after a short delay.
@@ -509,6 +571,9 @@ Behavior:
 - Visual style is blue-to-red liquid/glass blob with cyan highlights, crimson edge, inner shine, glow, outline/ring, wobble, squash/stretch, and rotation.
 - Random chance remains rare.
 - Manual trigger is `nrop`.
+- Hover trigger: if the user holds the pointer over the idle/background orb for roughly 1.2-1.8 seconds, the orb panics and runs the same full sequence. Leaving before the timer completes cancels the trigger.
+- Hover feedback makes the idle orb sharpen/glow/tremble slightly and may show subtle randomized suspicion text. This only works in idle/background mode, not during panic/escape/return.
+- Hover-triggered panic unlocks hidden achievement `orb_observer` / `Orb Observer`.
 - There is an idle/background mode: low opacity, blurred, behind content, slow drift.
 - Triggered orb events use a state flow: idle/background -> panic exit -> foreground escape -> return to idle -> idle/background.
 - ChaosOrb uses one persistent orb shell so the visible creature does not swap unrelated elements during the sequence.
@@ -527,6 +592,7 @@ Files:
 - `src/data/buttonReactions.js`
 - `src/components/JokeButton.jsx`
 - `src/components/ReactionOverlay.jsx`
+- `src/components/ReactionOverlayHost.jsx`
 
 Purpose:
 
@@ -536,6 +602,8 @@ Purpose:
 - Reactions should be quick, roughly 300-900ms, and not annoying.
 - Reactions are real visual/physical animations: wiggle/squish, shake, progress bar, scoot, orb glow/ring, or dramatic stamp.
 - Reaction text/stamps render through a body-level portal with high z-index so they are not clipped by FloatingWindow overflow.
+- Reaction overlays are dispatched to `ReactionOverlayHost` so they can linger even if the parent window closes.
+- Button physical animation stays quick, but reaction text/stamps should remain readable for roughly 1.4-2.2 seconds with a softer fade.
 - Reactions are used in age gate buttons, fake ads, ToS buttons, long ToS buttons, and CAPTCHA joke buttons.
 - Hidden achievement `button_whisperer` unlocks when the user discovers a joke-button reaction.
 
@@ -629,8 +697,10 @@ Achievement hooks include:
 - first direct connection
 - custom tag
 - opened node web
+- opened achievements ledger (`opened_achievements` / `Achievement For Achievements`)
 - manual age gate
 - manual orb
+- orb hover observer
 - manual ads
 - manual ToS
 - manual CAPTCHA
@@ -640,6 +710,7 @@ Achievement hooks include:
 - scrolled long ToS
 - CAPTCHA complete
 - Website Lore Ledger discovery
+- node bashing/collision (`node_basher` / `Personal Space Violation`)
 - five disasters
 - ten disasters
 
@@ -647,6 +718,8 @@ Toast behavior:
 
 - `AchievementToast.jsx` is a bottom-right cursed archive notification with dark glass styling, blue-to-red accent, icon/seal, slide/fade animation, and glow pulse.
 - Achievements queue in App state so multiple unlocks do not stack on top of each other.
+- Achievement toasts can be dragged/swiped horizontally. A swipe past roughly 100px dismisses the toast early and advances the queue.
+- Auto-dismiss still works, but the timer pauses while the toast is being dragged.
 
 Hidden access:
 
@@ -678,6 +751,11 @@ Requirements:
 - Framer Motion drag.
 - `dragMomentum={false}`.
 - Small `dragElastic`.
+- Default `keepInViewport={true}`.
+- On drag release, shared `FloatingWindow` checks its bounding box against the viewport and snaps back with a spring if the window is too far offscreen.
+- Keep at least about 80-120px visible horizontally and keep the title bar/controls reachable vertically.
+- Clamp on release only; do not hard-lock dragging while the user is actively moving the window.
+- If a window is rescued, App listens for `twtaf:window-rescued` and may show a short randomized containment toast.
 - Readable text.
 - Good z-index.
 - Supports `closeOnOutsideClick` and `closeOnEscape`.

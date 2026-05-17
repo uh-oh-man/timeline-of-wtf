@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { BookMarked, Database, Eye, FileWarning, FolderOpen, GitBranch, Megaphone, RotateCcw, ShieldCheck, Sparkles, Trophy } from "lucide-react";
+import { BookMarked, Database, Download, Eye, FileWarning, FolderOpen, GitBranch, Megaphone, RotateCcw, ShieldCheck, Sparkles, Trophy, Upload } from "lucide-react";
 import { useState } from "react";
 import FloatingWindow from "./FloatingWindow";
 
@@ -15,6 +15,8 @@ export default function AdminPanel({
   onEnterExampleMode,
   onExitExampleMode,
   onLoadExampleMediaFolder,
+  onExportTimeline,
+  onImportTimeline,
   onReset,
   exampleMode,
   counts,
@@ -137,6 +139,32 @@ export default function AdminPanel({
               </motion.button>
             ) : null}
           </AnimatePresence>
+        </div>
+      </div>
+
+      <div className="mt-5 rounded-3xl border border-white/15 bg-black/25 p-4">
+        <p className="text-xs font-black uppercase tracking-widest text-zinc-300">Data Management</p>
+        <p className="mt-2 text-sm leading-6 text-zinc-200">
+          Backup and restore timeline evidence with .uhoh files. Photos/videos are not included yet because the archive
+          refuses to lie about file magic.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={onExportTimeline}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-sky-300/25 bg-sky-500/15 px-4 py-3 text-sm font-black text-sky-50 transition hover:bg-sky-500/25 focus:outline-none focus:ring-4 focus:ring-sky-300/25"
+          >
+            <Download className="h-4 w-4" aria-hidden="true" />
+            Export Timeline (.uhoh)
+          </button>
+          <button
+            type="button"
+            onClick={onImportTimeline}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-300/25 bg-red-500/15 px-4 py-3 text-sm font-black text-red-50 transition hover:bg-red-500/25 focus:outline-none focus:ring-4 focus:ring-red-300/25"
+          >
+            <Upload className="h-4 w-4" aria-hidden="true" />
+            Import Timeline (.uhoh)
+          </button>
         </div>
       </div>
 

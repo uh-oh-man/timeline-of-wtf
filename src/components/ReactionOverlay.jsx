@@ -10,7 +10,7 @@ function getOverlayPosition(rect) {
   };
 }
 
-function Bubble({ message, rect, type }) {
+function Bubble({ message, rect, type, duration }) {
   const position = getOverlayPosition(rect);
 
   return (
@@ -24,7 +24,7 @@ function Bubble({ message, rect, type }) {
         y: [8, -4, -8, -14],
         scale: type === "spark" ? [0.88, 1.08, 1, 0.96] : [0.88, 1, 1, 0.96],
       }}
-      transition={{ duration: 0.72, ease: "easeOut" }}
+      transition={{ duration, ease: "easeOut", times: [0, 0.14, 0.78, 1] }}
     >
       {message}
       {type === "spark" ? (
@@ -34,7 +34,7 @@ function Bubble({ message, rect, type }) {
   );
 }
 
-function Progress({ message, rect }) {
+function Progress({ message, rect, duration }) {
   const position = getOverlayPosition(rect);
 
   return (
@@ -44,7 +44,7 @@ function Progress({ message, rect }) {
       style={position}
       initial={{ opacity: 0, y: 10, scale: 0.94 }}
       animate={{ opacity: [0, 1, 1, 0], y: [10, -2, -5, -10], scale: [0.94, 1, 1, 0.98] }}
-      transition={{ duration: 0.86, ease: "easeOut" }}
+      transition={{ duration, ease: "easeOut", times: [0, 0.12, 0.8, 1] }}
     >
       <div className="flex items-center justify-between gap-3">
         <span>{message}</span>
@@ -57,14 +57,14 @@ function Progress({ message, rect }) {
           className="h-full rounded-full bg-gradient-to-r from-cyan-300 via-blue-400 to-red-400"
           initial={{ width: "3%" }}
           animate={{ width: ["3%", "48%", "76%", "100%"] }}
-          transition={{ duration: 0.62, ease: "easeInOut" }}
+          transition={{ duration: Math.min(1.05, duration * 0.58), ease: "easeInOut" }}
         />
       </div>
     </motion.div>
   );
 }
 
-function OrbPulse({ message, rect }) {
+function OrbPulse({ message, rect, duration }) {
   const position = getOverlayPosition(rect);
 
   return (
@@ -74,13 +74,13 @@ function OrbPulse({ message, rect }) {
       style={position}
       initial={{ opacity: 0 }}
       animate={{ opacity: [0, 1, 1, 0] }}
-      transition={{ duration: 0.72 }}
+      transition={{ duration, times: [0, 0.12, 0.78, 1] }}
     >
       <motion.div
         className="absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-200/55 shadow-[0_0_24px_rgba(34,211,238,0.7)]"
         initial={{ scale: 0.2, opacity: 0.9 }}
         animate={{ scale: 1.65, opacity: 0 }}
-        transition={{ duration: 0.68, ease: "easeOut" }}
+        transition={{ duration: Math.min(1.15, duration * 0.62), ease: "easeOut" }}
       />
       <div className="relative rounded-2xl border border-cyan-200/25 bg-[linear-gradient(135deg,rgba(14,165,233,0.96),rgba(127,29,29,0.96))] px-3 py-2 text-center text-[0.7rem] font-black text-white shadow-2xl shadow-black/50">
         {message}
@@ -89,7 +89,7 @@ function OrbPulse({ message, rect }) {
   );
 }
 
-function Stamp({ message, rect }) {
+function Stamp({ message, rect, duration }) {
   const position = getOverlayPosition(rect);
 
   return (
@@ -99,7 +99,7 @@ function Stamp({ message, rect }) {
       style={{ left: position.left, top: rect ? rect.top + rect.height / 2 : position.top }}
       initial={{ opacity: 0, scale: 1.8, rotate: -18 }}
       animate={{ opacity: [0, 1, 1, 0], scale: [1.8, 0.95, 1, 0.9], rotate: [-18, -8, -6, -4] }}
-      transition={{ duration: 0.78, ease: "easeOut" }}
+      transition={{ duration, ease: "easeOut", times: [0, 0.16, 0.78, 1] }}
     >
       {message}
     </motion.div>
@@ -111,16 +111,17 @@ export default function ReactionOverlay({ reaction, rect }) {
 
   const overlay = reaction.overlay || "bubble";
   const message = reaction.message;
+  const duration = (reaction.overlayDuration || 1900) / 1000;
 
   const content =
     overlay === "progress" ? (
-      <Progress message={message} rect={rect} />
+      <Progress message={message} rect={rect} duration={duration} />
     ) : overlay === "orb" ? (
-      <OrbPulse message={message} rect={rect} />
+      <OrbPulse message={message} rect={rect} duration={duration} />
     ) : overlay === "stamp" ? (
-      <Stamp message={message} rect={rect} />
+      <Stamp message={message} rect={rect} duration={duration} />
     ) : (
-      <Bubble message={message} rect={rect} type={overlay} />
+      <Bubble message={message} rect={rect} type={overlay} duration={duration} />
     );
 
   return createPortal(content, document.body);

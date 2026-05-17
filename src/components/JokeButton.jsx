@@ -1,8 +1,7 @@
 import { motion } from "framer-motion";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { buttonReactions } from "../data/buttonReactions";
 import { pickRandom } from "../utils/helpers";
-import ReactionOverlay from "./ReactionOverlay";
 
 const reactionTypes = Object.keys(buttonReactions);
 
@@ -21,32 +20,49 @@ export default function JokeButton({
   const buttonRef = useRef(null);
   const [reacting, setReacting] = useState(false);
   const [reaction, setReaction] = useState(null);
-  const [buttonRect, setButtonRect] = useState(null);
+  const timers = useRef([]);
   const fallbackType = useMemo(() => reactionType || pickRandom(reactionTypes), [reactionType]);
+
+  useEffect(() => {
+    return () => {
+      timers.current.forEach((timer) => window.clearTimeout(timer));
+      timers.current = [];
+    };
+  }, []);
 
   function handleClick(event) {
     if (disabled || reacting) return;
 
     const chosen = buttonReactions[fallbackType] || buttonReactions.happy;
     const message = reactionText || pickRandom(chosen.messages);
-    setReaction({ ...chosen, message });
-    setButtonRect(buttonRef.current?.getBoundingClientRect?.() || null);
+    const nextReaction = {
+      ...chosen,
+      message,
+      overlayDuration: chosen.overlayDuration || 1900,
+    };
+    const buttonRect = buttonRef.current?.getBoundingClientRect?.() || null;
+    setReaction(nextReaction);
     setReacting(true);
     window.dispatchEvent(new window.CustomEvent("twtaf:joke-button"));
+    window.dispatchEvent(
+      new window.CustomEvent("twtaf:reaction-overlay", {
+        detail: { reaction: nextReaction, rect: buttonRect },
+      }),
+    );
 
     const shouldDelay = dismissAfterReaction ?? delayClose;
-    const reactionDuration = chosen.duration || 620;
-    const finish = () => {
+    const buttonDuration = chosen.duration || 620;
+    const actionDelay = shouldDelay ? chosen.actionDelay || 520 : 0;
+    const finishButton = () => {
       setReacting(false);
-      onClick?.(event);
     };
 
     if (shouldDelay) {
-      window.setTimeout(finish, reactionDuration);
+      timers.current.push(window.setTimeout(() => onClick?.(event), actionDelay));
     } else {
       onClick?.(event);
-      window.setTimeout(() => setReacting(false), reactionDuration);
     }
+    timers.current.push(window.setTimeout(finishButton, buttonDuration));
   }
 
   return (
@@ -63,7 +79,6 @@ export default function JokeButton({
       >
         {children}
       </motion.button>
-      {reacting ? <ReactionOverlay reaction={reaction} rect={buttonRect} /> : null}
     </span>
   );
 }
