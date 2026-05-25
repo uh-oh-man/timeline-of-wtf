@@ -74,20 +74,26 @@ export async function filesToStagedMedia(files, disasterId = "") {
     mediaFiles.map(async (file, index) => {
       const objectUrl = globalThis.URL.createObjectURL(file);
       const dimensions = file.type.startsWith("image/") ? await readImageDimensions(objectUrl) : { width: null, height: null };
+      const now = new Date().toISOString();
+      const mediaId = createId();
 
       return {
-        id: createId(),
+        id: mediaId,
         disasterId,
+        timelineId: "",
         fileName: file.name,
         fileType: file.type || "application/octet-stream",
         fileSize: file.size,
         width: dimensions.width,
         height: dimensions.height,
         objectUrl,
+        file,
         source: "user",
-        storage: "session",
+        storage: "indexeddb-pending",
+        indexedDbKey: mediaId,
         order: index,
-        createdAt: new Date().toISOString(),
+        createdAt: now,
+        updatedAt: now,
         caption: "",
       };
     }),
