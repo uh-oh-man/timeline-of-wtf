@@ -48,6 +48,280 @@ New files/components/services added:
 - `src/components/TimelineSourceSelector.jsx`
 - `src/components/AccountWindow.jsx`
 
+Major 2026-05-24 export/media persistence pass added:
+
+- `src/constants/appIdentity.js`
+- `src/services/media/mediaStore.js`
+- `src/services/media/mediaPersistence.js`
+- `src/services/media/useMediaObjectUrl.js`
+- `src/utils/uhohPackage.js`
+- `src/components/ExportOptionsWindow.jsx`
+
+## 2026-05-25 Timeline Manager / Remote Example / Lore Helper / Lime Pass
+
+Timeline Manager / selector / import-export:
+
+- The timeline selector is now a clear clickable button (`Timeline: <name>`) and opens a FloatingWindow instead of a dropdown/popover.
+- New window: `src/components/TimelineManagerWindow.jsx` (title: `Timeline Manager`).
+- New selector control: `src/components/TimelineManagerButton.jsx`.
+- Timeline Manager is now the user-facing home for:
+  - source/timeline switching
+  - local timeline management (new/rename/duplicate/delete/switch)
+  - import/export access
+  - shared/mock sync status
+  - example timeline entry/exit controls
+- Export/import are no longer admin-only. Admin now has an `Open Timeline Manager` shortcut instead of owning export/import.
+- Local timeline rows show active state and updated timestamp.
+- Deleting the final local timeline remains blocked by source service rules.
+
+Export naming behavior:
+
+- Export options now let users edit two independent values:
+  - `Timeline name in export` (used in `timeline.name` inside `data/timeline.json`)
+  - `Export file name` (downloaded filename only)
+- Added filename behavior:
+  - appends `.uhoh` if missing
+  - sanitizes invalid Windows filename chars: `\\ / : * ? " < > |`
+  - trims whitespace
+  - empty/invalid fallback: `timeline-export-YYYY-MM-DD-HHMM.uhoh`
+- Default export filename is generated from timeline name + timestamp.
+- Filename auto-syncs from timeline name until user manually edits filename.
+- Added `Match File Name To Timeline` button.
+- Added `Use Current Timeline Name` button.
+- Modern ZIP `.uhoh` remains default; legacy text export remains supported.
+
+Import preview naming behavior:
+
+- Import preview now includes `Timeline name after import` for `Import as New Local Timeline`.
+- New-local import name is editable and uniqueness-safe (auto `(Imported)` suffixing when needed).
+- `Merge Into Current Timeline` shows merge target and does not use rename field.
+- `Replace Current Timeline` now supports naming choices:
+  - keep current name
+  - use imported name
+  - custom name
+- Replace mode keeps explicit confirmation before execution.
+- Example exports are still detected and labeled as Example Timeline exports.
+
+Remote Example Timeline loading:
+
+- Added config: `src/data/exampleRemoteConfig.js`
+- Added loader: `src/services/example/loadExampleTimeline.js`
+- Example mode now attempts remote GitHub raw `.uhoh` first:
+  - `https://raw.githubusercontent.com/uh-oh-man/timeline-of-wtf/main/pre-made%20examples/example.uhoh`
+- Blob/page URL is not used for fetch.
+- Loader uses timeout + abort (default 12s), import validation, and example metadata checks.
+- On any remote failure/offline/invalid/corrupt/wrong metadata, fallback automatically loads built-in example data.
+- Remote example session does not overwrite local timeline data.
+- Remote example package media is imported for session use and tagged to a dedicated temporary timeline ID.
+- Leaving example mode cleans remote example media from IndexedDB via timeline-scoped cleanup.
+- Timeline Manager example button now exposes loading/progress/fallback/failure messaging.
+- Example source status is surfaced in Example banner/manager (`Remote GitHub .uhoh` vs `Built-in fallback`).
+
+Website Lore Helper:
+
+- `Website Lore Ledger` is now `Website Lore Helper` in visible UI copy.
+- New helper component: `src/components/WebsiteLoreHelper.jsx`.
+- Compatibility wrapper remains at `src/components/WebsiteLoreLedger.jsx` for import stability.
+- Removed helper sections:
+  - Micro-Reaction Catalog (static non-interactive)
+  - Admin Tools block
+  - Future Hidden Things
+  - bottom dev/boot clutter
+- Kept Known Typed Secrets behavior:
+  - normal users see discovered secrets + redacted unknown entries
+  - admin can preview full known typed registry
+- Added `Touch / Phone Access` section under Known Typed Secrets with:
+  - Admin long-press instructions
+  - helper long-press/triple-tap instructions
+  - orb hold instructions
+  - touch achievement access hint
+  - popup/secret access guidance
+- Removed obvious lore helper button from Admin Panel.
+- Hidden helper access preserved:
+  - typed `ADMIN` then `lore`
+  - Admin badge triple-click
+  - Admin badge long-press path
+
+Lime hidden feature + clicker:
+
+- Added hidden `lime` mini-game with persistent unlock and app-wide progression.
+- New UI/components:
+  - `src/components/LimeButton.jsx`
+  - `src/components/LimeClickerWindow.jsx`
+- New data/services:
+  - `src/data/limeConfig.js`
+  - `src/data/limeUpgrades.js`
+  - `src/services/lime/limeMath.js`
+  - `src/services/lime/limeStorage.js`
+  - `src/utils/numberFormat.js`
+- Unlock behavior:
+  - during ChaosOrb `foregroundEscape`, orb is clickable/tappable
+  - clicking/tapping mid-flight unlocks lime
+  - unlock persists in `twtaf:limeUnlocked`
+  - optional achievement added: `lime_unlocked` / `Put The Lime In The Timeline`
+- ChaosOrb integration:
+  - pointer events enabled during `foregroundEscape`
+  - unlock callback fires once per escape run
+  - repeat clicks after unlock only give tiny sparkle feedback
+- Lime image load order:
+  - local `/lime.png`
+  - local `/assets/lime.png`
+  - raw GitHub fallback `https://raw.githubusercontent.com/uh-oh-man/timeline-of-wtf/main/lime.png`
+  - emoji fallback if all image sources fail
+- Lime state key:
+  - `twtaf:limeClicker`
+- State includes:
+  - lime count, total earned, total clicks
+  - upgrade levels
+  - timestamps (`lastUpdatedAt`, `updatedAt`, etc.)
+- Progress model is timestamp/offline-based (not interval-only):
+  - catches up after tab inactivity, window closure, and refresh
+  - offline gains are applied and surfaced
+- Upgrades are data-driven and costs/effects are computed via `limeMath.js`.
+- Admin Wipe clears lime keys because they are under `twtaf:*`.
+
+## 2026-05-25 Peer Sync / Identity / Lime Multiplayer Scaffold Pass
+
+This pass focused on modular architecture + safe wiring without backend requirements. Core flows compile and are exposed in UI, with explicit TODO areas for deeper sync behavior.
+
+### Gray Screen Startup Fix
+
+- Fixed a startup crash path in `src/utils/numberFormat.js` by guarding `Intl.NumberFormat` creation with safe fallbacks.
+- This prevents full-app blank/gray render on environments where compact number notation support is incomplete.
+
+### Peer Sync (Manual WebRTC + Encrypted Messages)
+
+New files:
+
+- `src/services/peerSync/peerCodecs.js`
+- `src/services/peerSync/peerCrypto.js`
+- `src/services/peerSync/peerMessages.js`
+- `src/services/peerSync/peerSyncManager.js`
+- `src/services/peerSync/persistentSessionsStore.js`
+- `src/components/PeerInviteFlow.jsx`
+- `src/components/PeerGuestPermissions.jsx`
+- `src/components/ShareTimelineWindow.jsx`
+- `src/data/peerPermissions.js`
+
+Implemented:
+
+- Manual copy/paste invite flow scaffold:
+  - host offer code
+  - guest answer code
+  - host accepts answer
+- Encoded peer codes with version/kind/session description metadata.
+- Web Crypto scaffold:
+  - PBKDF2 key derivation
+  - AES-GCM envelope encrypt/decrypt
+  - per-message IV
+- Peer session manager abstraction:
+  - create host/join sessions
+  - create offer/answer
+  - accept answer
+  - data channel send/receive
+  - connection state/system listeners
+  - heartbeat/checksum timers
+- Security mismatch system event + user-facing status path.
+- No backend dependency added; static/manual signaling model remains.
+
+### Timeline Manager Share Entry
+
+- `Timeline Manager` now includes `Share Timeline` button.
+- Share opens `ShareTimelineWindow` from normal user flow (not Admin-only).
+- Share binding stores session timeline identity fields (`sharedTimelineId`, `sharedTimelineCode`, `sharedTimelineName`) so session target is explicit.
+
+### Guest Permissions UI
+
+- Added grouped permission cards/toggles (not checkbox wall).
+- Added presets scaffold:
+  - Full Access
+  - View Only
+  - Co-Editor
+  - Lime Goblin
+  - Custom detection
+- Per-guest permission editing UI is wired into Share window state.
+
+### Persistent Session Cache Scaffold
+
+- Added persistent session local store key:
+  - `twtaf:peerPersistentSessions`
+- Added persistent sessions list/actions UI in Share window:
+  - View Cached
+  - Try Reconnect
+  - Save as Local Timeline
+  - Forget
+- Current actions are scaffolded with status messaging where deeper logic is TODO.
+
+### Timeline / Package / Event Identity
+
+New file:
+
+- `src/utils/identityCodes.js`
+
+Implemented:
+
+- Timeline metadata now normalized with stable `timelineCode` generation in local timeline source.
+- Event normalization now generates/preserves `eventCode`.
+- Local timeline metadata now carries attribution/revision/lineage fields (createdBy/updatedBy/revision/lineage placeholders).
+- Export package manifest now includes `packageId`.
+- Export payload now includes:
+  - `timelineIdentity`
+  - `packageRef`
+- Import summary now surfaces `timelineCode` + `packageId` when available.
+
+### Import Update/Merge by Timeline Code
+
+New file:
+
+- `src/utils/timelineMerge.js`
+
+Implemented:
+
+- Matching timeline-by-code detection in import flow.
+- Import preview now shows special matching-timeline prompt and options:
+  - Update Existing Timeline
+  - Merge Into Existing Timeline
+  - Import as New Copy
+- App-side handlers use merge/update helpers to apply matching-code operations.
+
+### Lime Multiplayer / Fruit Events / Limevements (Modular Scaffold)
+
+New files:
+
+- `src/services/lime/limeMultiplayerStore.js`
+- `src/data/limeFruitEvents.js`
+- `src/services/lime/limeFruitEvents.js`
+- `src/data/limevements.js`
+- `src/services/lime/limevementsStore.js`
+- `src/components/LimevementsPanel.jsx`
+
+Updated:
+
+- `src/components/LimeClickerWindow.jsx`
+- `src/App.jsx`
+
+Implemented:
+
+- Lime window now has Solo/Multiplayer mode controls (host/join/switch scaffold).
+- Multiplayer save namespace scaffold:
+  - `twtaf:limeMultiplayerSessions`
+  - `twtaf:activeLimeMultiplayerSessionId`
+- Added Lemon/Orange event systems:
+  - Lemon steal tick logic and click-to-clear path
+  - Orange boost state and production boost multiplier path
+- Added Limevements store + panel/button near reset.
+- Added unlock hooks for core limevements milestones (unlock/click/upgrade/auto/debt/orange/lemon/multiplayer).
+
+### TODO / Follow-Up (Important)
+
+- Peer timeline mutation sync messages are scaffolded but not fully wired to all CRUD operations yet.
+- Games Queue full permission enforcement + attribution metadata model still needs complete end-to-end integration.
+- Share-window persistent session actions (`View Cached`, `Reconnect`, `Save Local Copy`) currently scaffolded in UI; deeper replay/copy flows remain TODO.
+- Peer-host authoritative live timeline snapshot repair and full diff reconciliation need deeper implementation.
+- Lime multiplayer currently stores/labels sessions and mode state, but full host-authoritative peer state replication for lime clicks/upgrades remains TODO.
+- Fruit event multiplayer ownership broadcasting (`lime-fruit-spawned/cleared`) remains TODO.
+- Timeline/entry attribution display in more surfaces can be expanded (currently foundational metadata exists).
+
 Admin Reset is now **Wipe** in user-facing UI. Wipe only removes app-specific `twtaf:*` keys and known legacy `twotf.*` keys; never clear unrelated browser storage.
 
 Disasters now support optional `accentColor`. Valid `#RGB`/`#RRGGBB` colors are normalized to `#RRGGBB`; invalid colors are dropped and the UI falls back to controlled theme/tag/game colors. Accent colors affect timeline cards, dots, top stripes, borders/glows, detail accents, Node Web node colors, and node collision particles. Node collision particles now use the dragged node color, target node color, and a mixed color from `mixHexColors()`.
@@ -106,10 +380,11 @@ Example Timeline:
 Export/import:
 
 - Export active timeline by default and include timeline metadata.
-- `.uhoh` payload includes `timelineType`, `timeline`, `mediaIncluded: false`, and normalized `accentColor`.
+- Default `.uhoh` export is modern ZIP package format (manifest + data/timeline + optional media folder).
+- Legacy text `.uhoh` export still exists as a secondary/debug option.
 - Import options: Import as New Local Timeline, Merge Into Current Timeline, Replace Current Timeline, Cancel.
 - Import as new local timeline is the safest/default path.
-- Photos/videos are still not included; imported media metadata is marked missing so placeholders render honestly.
+- Modern ZIP import supports media extraction into IndexedDB. Legacy/data-only imports still mark missing media honestly.
 
 Touch/mobile:
 
@@ -139,6 +414,8 @@ Timeline animations:
 ```text
 src/
   App.jsx
+  constants/
+    appIdentity.js
   data/
     achievements.js
     ageGateMessages.js
@@ -173,6 +450,7 @@ src/
     DisasterDetailWindow.jsx
     DisasterForm.jsx
     ExampleModeBanner.jsx
+    ExportOptionsWindow.jsx
     FakeAdWindow.jsx
     FakeCaptchaModal.jsx
     FloatingWindow.jsx
@@ -200,7 +478,18 @@ src/
     mediaUtils.js
     orbUtils.js
     exportImport.js
+    uhohPackage.js
     storage.js
+  services/
+    media/
+      mediaPersistence.js
+      mediaStore.js
+      useMediaObjectUrl.js
+    timelineSources/
+      timelineSourceManager.js
+      localTimelineSource.js
+      mockSyncedTimelineSource.js
+      exampleTimelineSource.js
 scripts/
   generateExampleMediaManifest.js
 ```
@@ -260,49 +549,85 @@ Persist:
 - dismissed ToS flags
 - admin mode
 
-Do not store raw photos/videos in localStorage. Future real media blobs/files should use IndexedDB. localStorage should only store metadata/IDs.
+Media persistence now uses IndexedDB:
+
+- DB: `twtaf-media`
+- Version: `1`
+- Store: `mediaBlobs` (keyPath: `id`)
+- Blob records store `id`, `timelineId`, `disasterId`, file metadata, and the raw `blob`.
+
+Raw photos/videos are not stored in localStorage. localStorage keeps only lightweight media metadata and IDs. Object URLs are session-only and recreated from IndexedDB blobs on render.
 
 ## Export / Import
 
-Files:
+Core files:
 
 - `src/utils/exportImport.js`
+- `src/utils/uhohPackage.js`
+- `src/constants/appIdentity.js`
+- `src/components/ExportOptionsWindow.jsx`
 - `src/components/ImportPreviewWindow.jsx`
 
-The app has a future-proof text export/import system for real user timeline data using `.uhoh` files. Export/import operates on real local data, not Admin Example Mode session data. If the user starts the flow while Example Mode is active, warn that exporting/importing fake demo nonsense is probably not what they meant.
+Dependency:
 
-`.uhoh` files use a readable header followed by JSON after the marker:
+- `jszip` (browser-side ZIP create/read for modern `.uhoh` packages)
 
-```text
---- UH OH TIMELINE EXPORT ---
-App: The Timeline of What The Fuck
-Format: .uhoh
-Export Version: 1
-Created: 2026-05-16T00:00:00.000Z
-Warning: This file contains timeline disasters, tags, planned games, and optional metadata. Photos/videos are NOT included yet.
-Do not edit below this line unless you enjoy breaking things.
---- DATA ---
-```
+`.uhoh` is now a shared extension that may be used by multiple future apps/sites. This app validates identity before import using:
 
-JSON payload rules:
+- `app.id: "twtaf"`
+- `app.name: "The Timeline of What The Fuck"`
+- `app.type: "timeline"`
+- `app.filePurpose: "timeline-export"`
 
-- `schema` is `twtaf.timeline.export`.
-- `exportVersion` is versioned with `CURRENT_EXPORT_VERSION`.
-- `storageVersion` is versioned with `CURRENT_STORAGE_VERSION`.
-- Export includes events/disasters, tags, planned games, known secrets, and achievements.
-- Photos/videos are not included yet. Export preserves lightweight media metadata but strips session-only URLs.
-- Imported media metadata is marked `storage: "missing-import-media"` and `missing: true` so the UI uses missing/broken evidence placeholders instead of pretending files exist.
+Wrong-app files are rejected with detected app info and a clear refusal message.
+
+Default export format is now modern ZIP-package `.uhoh`:
+
+- `manifest.json`
+- `data/timeline.json`
+- optional `media/` files
+
+Modern package includes schema/version/app identity metadata, timeline payload, media summary counts, and path metadata.
+
+Export UI now opens an options window:
+
+- `Export Data Only` (modern ZIP `.uhoh`, `mediaIncluded: false`)
+- `Export With Photos/Videos` (modern ZIP `.uhoh`, media blobs included)
+- `Export Legacy Text .uhoh` (debug/backward-compat text format)
+- `Cancel`
+
+Legacy text `.uhoh` remains available and supported for import. Legacy text exports do not include raw media.
+
+Media export behavior:
+
+- IndexedDB media blobs are included when exporting with media.
+- Public/example media URLs are fetched and included when possible.
+- Missing media is marked `missing-export-media` and warned, without crashing export.
+- Export progress is surfaced during media collection/ZIP generation.
+- Large export warnings:
+  - warning threshold: ~250 MB
+  - strong warning threshold: ~1 GB
 
 Import behavior:
 
-- Accept `.uhoh`, `.json`, `text/plain`, and `application/json`.
-- If `--- DATA ---` exists, parse JSON after it; otherwise try parsing the whole file.
-- Show `ImportPreviewWindow` before applying anything.
-- Preview shows app name, created date, export/storage versions, event/tag/future-game counts, media status, compatibility warnings, and whether unknown future fields exist.
-- `Merge Import` adds imported disasters, avoids duplicate event IDs, merges tags/planned games, and preserves current data.
-- `Replace Current Timeline` requires a second confirmation and replaces events/tags/planned games with imported data.
-- Import is best-effort and migration-based. Missing or old fields are normalized safely, and unknown future event fields are preserved where possible.
-- Invalid files show: `The archive tried to read this file and immediately regretted it.`
+- Detect modern ZIP `.uhoh` by ZIP magic bytes (`PK`).
+- Modern ZIP import reads `manifest.json` and `data/timeline.json`, validates app identity, and shows preview.
+- Legacy text import still supports header+`--- DATA ---` and raw JSON.
+- Import preview shows format, detected app/site, timeline metadata, event/tag/planned-game counts, media included/count/size, warnings, and example-export flag.
+- Import modes:
+  - Import as New Local Timeline (preferred/default)
+  - Merge Into Current Timeline
+  - Replace Current Timeline (extra confirmation)
+
+Modern media import behavior:
+
+- Package media entries (`storage: "uhoh-package"` + `packagePath`) are extracted from ZIP and saved into IndexedDB.
+- Imported media metadata is rewritten to `storage: "indexeddb"` with `indexedDbKey`.
+- Missing package media becomes `storage: "missing-import-media"` + `missing: true` so placeholders render honestly.
+
+Invalid/corrupt files still surface:
+
+- `The archive tried to read this file and immediately regretted it.`
 
 ## Media Model
 
@@ -311,6 +636,7 @@ Media metadata shape:
 ```js
 {
   id: "media-id",
+  timelineId: "local-main",
   disasterId: "disaster-id",
   fileName: "image.png",
   fileType: "image/png",
@@ -318,14 +644,17 @@ Media metadata shape:
   width: 1920,
   height: 1080,
   createdAt: "ISO timestamp",
+  updatedAt: "ISO timestamp",
   caption: "",
   order: 0,
-  storage: "indexeddb" | "example" | "broken",
-  objectUrl: "session-only if applicable"
+  storage: "indexeddb" | "uhoh-package" | "missing-import-media" | "missing-export-media" | "example" | "broken",
+  indexedDbKey: "media-id",
+  packagePath: "media/media-id-image.png", // package exports/imports only
+  objectUrl: "session-only, recreated from IndexedDB at runtime when needed"
 }
 ```
 
-Current implementation supports display structure, Admin Example Mode media, and session-only staged media attachments in the form. Real durable user media persistence still needs IndexedDB. Do not store raw media in localStorage.
+Real timeline media now persists through refresh via IndexedDB. Components resolve media URLs from IndexedDB on mount and revoke generated object URLs on cleanup. Missing blobs intentionally render `BrokenMediaPlaceholder` instead of crashing disaster rendering.
 
 ## Timeline
 
@@ -350,8 +679,8 @@ Current implementation supports display structure, Admin Example Mode media, and
 - Accepts images and videos: png, jpg/jpeg, webp, gif, mp4, webm.
 - Staged media previews in the form with file name, size, thumbnail when possible, and remove button.
 - Each staged/existing media item has an optional caption/comment field.
-- Current real-user media attachment is session-only until IndexedDB storage is implemented.
-- Helper text must explain local/session-only media honestly.
+- Real timeline media attachments are persisted to IndexedDB on save.
+- localStorage keeps metadata only; raw files stay in IndexedDB.
 
 ### Timeline Drag Mode
 
