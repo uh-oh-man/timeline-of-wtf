@@ -32,7 +32,7 @@ export default function Header({
     holdTimer.current = window.setTimeout(() => {
       setHoldingBadge(false);
       if (adminMode) {
-        onSecretBadgeClick?.();
+        onSecretBadgeClick?.("long-press");
       } else {
         onAdminLongPress?.();
       }
@@ -61,7 +61,7 @@ export default function Header({
         onPointerUp={clearBadgeHold}
         onPointerLeave={clearBadgeHold}
         onPointerCancel={clearBadgeHold}
-        title={adminMode ? "Triple-tap or long-press for the ledger." : "Long-press to convince the archive you are admin."}
+        title={adminMode ? "Triple-tap or long-press for the helper." : "Long-press to convince the archive you are admin."}
         className={cx(
           "relative mb-5 inline-flex min-h-11 items-center gap-2 overflow-hidden rounded-full border border-sky-300/30 bg-sky-500/15 px-3 py-2 text-sm font-semibold text-sky-50 transition focus:outline-none focus:ring-4",
           adminMode

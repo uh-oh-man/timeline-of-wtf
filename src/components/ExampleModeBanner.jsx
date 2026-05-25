@@ -16,6 +16,8 @@ export default function ExampleModeBanner({
   mediaCount,
   generatedMediaCount,
   mediaStatus,
+  sourceLabel,
+  fallbackNotice,
   fileInputRef,
 }) {
   const message = useMemo(() => bannerMessages[Math.floor(Math.random() * bannerMessages.length)], []);
@@ -35,6 +37,8 @@ export default function ExampleModeBanner({
             Automatic media folder: {exampleMediaConfig.publicFolder} ({exampleMediaConfig.publicUrlBase})
           </p>
           {mediaStatus ? <p className="mt-2 text-xs text-zinc-200">{mediaStatus}</p> : null}
+          {sourceLabel ? <p className="mt-1 text-xs text-zinc-300">Example source: {sourceLabel}</p> : null}
+          {fallbackNotice ? <p className="mt-1 text-xs text-amber-100">{fallbackNotice}</p> : null}
           {generatedMediaCount ? (
             <p className="mt-2 text-xs text-cyan-100">
               {generatedMediaCount} public example media file{generatedMediaCount === 1 ? "" : "s"} auto-loaded from the manifest.

@@ -65,8 +65,8 @@ export const secretRegistry = [
   {
     id: "lore",
     trigger: "lore",
-    title: "Website Lore Ledger",
-    description: "Opens the internal nonsense registry.",
+    title: "Website Lore Helper",
+    description: "Opens the hidden feature helper.",
     requiresAdmin: true,
     category: "Typed Secret",
     knownByDefault: false,

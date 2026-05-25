@@ -2,14 +2,15 @@ import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import BrokenMediaPlaceholder from "./BrokenMediaPlaceholder";
-import { formatFileSize, getMediaUrl, isImageMedia, isVideoMedia } from "../utils/mediaUtils";
+import { formatFileSize, isImageMedia, isVideoMedia } from "../utils/mediaUtils";
+import { useMediaObjectUrl } from "../services/media/useMediaObjectUrl";
 
 export default function MediaLightbox({ mediaItems, initialIndex = 0, onClose }) {
   const [index, setIndex] = useState(initialIndex);
   const [failed, setFailed] = useState(false);
   const swipeStart = useRef(null);
   const media = mediaItems[index];
-  const mediaUrl = getMediaUrl(media);
+  const mediaUrl = useMediaObjectUrl(media);
   const hasMultiple = mediaItems.length > 1;
 
   useEffect(() => {

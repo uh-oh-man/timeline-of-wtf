@@ -404,10 +404,6 @@ export default function App() {
     }, 220);
   }, [persistLimeStateNow]);
 
-  const unlockLimevementId = useCallback((limevementId) => {
-    setLimevementsState((current) => unlockLimevement(current, limevementId));
-  }, []);
-
   useEffect(() => {
     modalStateRef.current = { majorWindowOpen };
   }, [majorWindowOpen]);
@@ -1023,6 +1019,10 @@ export default function App() {
       }
       return result.nextIds;
     });
+  }, []);
+
+  const unlockLimevementId = useCallback((limevementId) => {
+    setLimevementsState((current) => unlockLimevement(current, limevementId));
   }, []);
 
   useEffect(() => {

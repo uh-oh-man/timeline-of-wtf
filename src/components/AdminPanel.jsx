@@ -1,12 +1,12 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { BookMarked, CloudLightning, Database, Download, Eye, FileWarning, FolderOpen, GitBranch, Megaphone, ShieldCheck, Sparkles, Trash2, Trophy, Upload } from "lucide-react";
+import { CloudLightning, Database, Eye, FileWarning, FolderOpen, GitBranch, Megaphone, ShieldCheck, Sparkles, Trash2, Trophy, Workflow } from "lucide-react";
 import { useState } from "react";
 import FloatingWindow from "./FloatingWindow";
 
 export default function AdminPanel({
   onClose,
   onOpenAchievements,
-  onOpenLore,
+  onOpenTimelineManager,
   onOpenNodeWeb,
   onShowTos,
   onTriggerCaptcha,
@@ -15,8 +15,6 @@ export default function AdminPanel({
   onEnterExampleMode,
   onExitExampleMode,
   onLoadExampleMediaFolder,
-  onExportTimeline,
-  onImportTimeline,
   onReset,
   onSimulateRemoteUpdate,
   exampleMode,
@@ -78,14 +76,6 @@ export default function AdminPanel({
         >
           <Trophy className="h-4 w-4" aria-hidden="true" />
           Show Ledger + Secrets
-        </button>
-        <button
-          type="button"
-          onClick={onOpenLore}
-          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-cyan-200/25 bg-cyan-500/15 px-4 py-3 text-sm font-black text-cyan-50 transition hover:bg-cyan-500/25 focus:outline-none focus:ring-4 focus:ring-cyan-300/25"
-        >
-          <BookMarked className="h-4 w-4" aria-hidden="true" />
-          Website Lore Ledger
         </button>
         <button
           type="button"
@@ -163,25 +153,16 @@ export default function AdminPanel({
       <div className="mt-5 rounded-3xl border border-white/15 bg-black/25 p-4">
         <p className="text-xs font-black uppercase tracking-widest text-zinc-300">Data Management</p>
         <p className="mt-2 text-sm leading-6 text-zinc-200">
-          Backup and restore timeline evidence with .uhoh files. Photos/videos are not included yet because the archive
-          refuses to lie about file magic.
+          Export/import, timeline selection, and source controls live in Timeline Manager now.
         </p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="mt-4 grid gap-3">
           <button
             type="button"
-            onClick={onExportTimeline}
+            onClick={onOpenTimelineManager}
             className="inline-flex items-center justify-center gap-2 rounded-2xl border border-sky-300/25 bg-sky-500/15 px-4 py-3 text-sm font-black text-sky-50 transition hover:bg-sky-500/25 focus:outline-none focus:ring-4 focus:ring-sky-300/25"
           >
-            <Download className="h-4 w-4" aria-hidden="true" />
-            Export Timeline (.uhoh)
-          </button>
-          <button
-            type="button"
-            onClick={onImportTimeline}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-300/25 bg-red-500/15 px-4 py-3 text-sm font-black text-red-50 transition hover:bg-red-500/25 focus:outline-none focus:ring-4 focus:ring-red-300/25"
-          >
-            <Upload className="h-4 w-4" aria-hidden="true" />
-            Import Timeline (.uhoh)
+            <Workflow className="h-4 w-4" aria-hidden="true" />
+            Open Timeline Manager
           </button>
         </div>
       </div>

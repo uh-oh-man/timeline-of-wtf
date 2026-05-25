@@ -7,10 +7,12 @@ import MediaLightbox from "./MediaLightbox";
 import { fallbackTagStyle, tagStyles } from "../data/tagStyles";
 import { getEventAccentColor } from "../utils/colorUtils";
 import { cx } from "../utils/helpers";
-import { formatFileSize, getMediaUrl, isImageMedia, isVideoMedia } from "../utils/mediaUtils";
+import { formatFileSize, isImageMedia, isVideoMedia } from "../utils/mediaUtils";
+import { useMediaObjectUrl } from "../services/media/useMediaObjectUrl";
 
 function MediaTile({ media, onOpen }) {
   const [failed, setFailed] = useState(media.storage === "broken");
+  const mediaUrl = useMediaObjectUrl(media);
 
   return (
     <button
@@ -19,18 +21,18 @@ function MediaTile({ media, onOpen }) {
       className="overflow-hidden rounded-2xl border border-white/12 bg-black/30 text-left transition hover:border-sky-200/40 focus:outline-none focus:ring-4 focus:ring-sky-300/25"
     >
       <div className="aspect-video bg-zinc-950">
-        {failed || media.broken || !getMediaUrl(media) ? (
+        {failed || media.broken || !mediaUrl ? (
           <BrokenMediaPlaceholder fileName={media.fileName} />
         ) : isImageMedia(media) ? (
           <img
-            src={getMediaUrl(media)}
+            src={mediaUrl}
             alt={media.caption || media.fileName || "Timeline evidence"}
             onError={() => setFailed(true)}
             className="h-full w-full object-cover"
           />
         ) : isVideoMedia(media) ? (
           <video
-            src={getMediaUrl(media)}
+            src={mediaUrl}
             controls
             onError={() => setFailed(true)}
             className="h-full w-full object-cover"

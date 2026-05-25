@@ -1,5 +1,10 @@
 import { createId, uniqueByName } from "../../utils/helpers";
 import { normalizeEventAccentColor } from "../../utils/colorUtils";
+import {
+  generateEventCode,
+  generateTimelineCode,
+  normalizeTimelineCode,
+} from "../../utils/identityCodes";
 
 export const LOCAL_TIMELINE_INDEX_KEY = "twtaf:timelineIndex";
 export const ACTIVE_LOCAL_TIMELINE_ID_KEY = "twtaf:activeTimelineId";
@@ -16,6 +21,9 @@ const LEGACY_KEYS = {
   tags: "twotf.tags",
   plannedGames: "twotf.plannedGames",
 };
+
+const DEFAULT_LOCAL_USER_ID = "local-user";
+const DEFAULT_LOCAL_USER_NAME = "You";
 
 export function canUseStorage() {
   return typeof window !== "undefined" && Boolean(window.localStorage);
@@ -64,24 +72,84 @@ export function timelineStorageKey(timelineId, bucket) {
 
 function normalizeTimelineMetadata(timeline, index = 0) {
   const createdAt = timeline?.createdAt || nowIso();
+  const updatedAt = timeline?.updatedAt || createdAt;
+  const timelineCode = normalizeTimelineCode(timeline?.timelineCode) || generateTimelineCode();
+  const createdByUserId = String(timeline?.createdByUserId || DEFAULT_LOCAL_USER_ID);
+  const createdByName = String(timeline?.createdByName || DEFAULT_LOCAL_USER_NAME);
+  const updatedByUserId = String(timeline?.updatedByUserId || createdByUserId);
+  const updatedByName = String(timeline?.updatedByName || createdByName);
+  const revision = Number.isFinite(Number(timeline?.revision)) ? Number(timeline.revision) : 0;
+
   return {
     id: String(timeline?.id || (index === 0 ? "local-main" : `local-${createId()}`)),
+    timelineCode,
     name: String(timeline?.name || (index === 0 ? "Local Timeline" : "Local Timeline Copy")),
     type: "local",
     createdAt,
-    updatedAt: timeline?.updatedAt || createdAt,
+    updatedAt,
     lastOpenedAt: timeline?.lastOpenedAt || createdAt,
+    createdByUserId,
+    createdByName,
+    updatedByUserId,
+    updatedByName,
+    revision,
+    lineage: timeline?.lineage && typeof timeline.lineage === "object" ? timeline.lineage : {},
+    importedByName: timeline?.importedByName ? String(timeline.importedByName) : "",
+    importedAt: timeline?.importedAt ? String(timeline.importedAt) : "",
+    copiedFromTimelineCode: timeline?.copiedFromTimelineCode ? String(timeline.copiedFromTimelineCode) : "",
+    copiedFromTimelineName: timeline?.copiedFromTimelineName ? String(timeline.copiedFromTimelineName) : "",
     ...(timeline?.description ? { description: String(timeline.description) } : {}),
     ...(timeline?.color ? { color: String(timeline.color) } : {}),
   };
 }
 
-export function normalizeTimelineEvent(event, index = 0) {
+function normalizeTimelineMedia(media, timelineId, disasterId, index = 0) {
+  const source = media && typeof media === "object" ? { ...media } : {};
+  const id = source.id || createId();
+  const fileSize = Number.isFinite(Number(source.fileSize)) ? Number(source.fileSize) : 0;
+  const order = Number.isFinite(Number(source.order)) ? Number(source.order) : index;
+  const width = Number.isFinite(Number(source.width)) ? Number(source.width) : null;
+  const height = Number.isFinite(Number(source.height)) ? Number(source.height) : null;
+  const now = nowIso();
+  const storage = source.storage || (source.indexedDbKey ? "indexeddb" : source.src ? "external" : "missing-import-media");
+
+  delete source.objectUrl;
+  delete source.file;
+  delete source.blob;
+  delete source.packageBlob;
+
+  return {
+    ...source,
+    id,
+    timelineId: source.timelineId || timelineId || "",
+    disasterId: disasterId || source.disasterId || "",
+    fileName: String(source.fileName || "Unnamed evidence"),
+    fileType: String(source.fileType || "application/octet-stream"),
+    fileSize,
+    width,
+    height,
+    caption: String(source.caption || ""),
+    order,
+    storage: storage === "session" ? "missing-import-media" : storage,
+    ...(storage === "indexeddb" || source.indexedDbKey ? { indexedDbKey: source.indexedDbKey || id } : {}),
+    createdAt: source.createdAt || now,
+    updatedAt: source.updatedAt || source.createdAt || now,
+    ...(source.storage === "session" ? { missing: true } : {}),
+  };
+}
+
+export function normalizeTimelineEvent(event, index = 0, timelineId = "") {
   const normalized = normalizeEventAccentColor(event || {});
+  const eventId = normalized.id || createId();
+  const eventCode = String(normalized.eventCode || "").trim().toUpperCase() || generateEventCode();
+  const createdAt = normalized.createdAt || nowIso();
+  const updatedAt = normalized.updatedAt || createdAt || nowIso();
+  const revision = Number.isFinite(Number(normalized.revision)) ? Number(normalized.revision) : 0;
 
   return {
     ...normalized,
-    id: normalized.id || createId(),
+    id: eventId,
+    eventCode,
     year: String(normalized.year || ""),
     title: String(normalized.title || ""),
     source: String(normalized.source || normalized.game || ""),
@@ -89,10 +157,13 @@ export function normalizeTimelineEvent(event, index = 0) {
     summary: String(normalized.summary || ""),
     connections: Array.isArray(normalized.connections) ? normalized.connections : [],
     directConnections: Array.isArray(normalized.directConnections) ? normalized.directConnections : [],
-    media: Array.isArray(normalized.media) ? normalized.media : [],
+    media: Array.isArray(normalized.media)
+      ? normalized.media.map((media, mediaIndex) => normalizeTimelineMedia(media, timelineId, eventId, mediaIndex))
+      : [],
     sortOrder: Number.isFinite(Number(normalized.sortOrder)) ? Number(normalized.sortOrder) : index,
-    createdAt: normalized.createdAt || nowIso(),
-    updatedAt: normalized.updatedAt || normalized.createdAt || nowIso(),
+    createdAt,
+    updatedAt,
+    revision,
   };
 }
 
@@ -186,11 +257,16 @@ export function setActiveTimeline(timelineId) {
 }
 
 export function listEvents(timelineId = getActiveTimelineId()) {
-  return loadList(timelineStorageKey(timelineId, "events"), []).map(normalizeTimelineEvent);
+  return loadList(timelineStorageKey(timelineId, "events"), []).map((event, index) =>
+    normalizeTimelineEvent(event, index, timelineId),
+  );
 }
 
 export function saveEvents(timelineId, events) {
-  saveList(timelineStorageKey(timelineId, "events"), (events || []).map(normalizeTimelineEvent));
+  saveList(
+    timelineStorageKey(timelineId, "events"),
+    (events || []).map((event, index) => normalizeTimelineEvent(event, index, timelineId)),
+  );
   touchTimeline(timelineId);
 }
 
@@ -220,19 +296,43 @@ export function touchTimeline(timelineId) {
   const timelines = readTimelineIndexRaw().map(normalizeTimelineMetadata);
   if (!timelines.length) return;
   writeTimelineIndex(
-    timelines.map((timeline) => (timeline.id === timelineId ? { ...timeline, updatedAt } : timeline)),
+    timelines.map((timeline) => (timeline.id === timelineId
+      ? {
+          ...timeline,
+          updatedAt,
+          updatedByUserId: timeline.updatedByUserId || DEFAULT_LOCAL_USER_ID,
+          updatedByName: timeline.updatedByName || DEFAULT_LOCAL_USER_NAME,
+          revision: Number.isFinite(Number(timeline.revision)) ? Number(timeline.revision) + 1 : 1,
+        }
+      : timeline)),
   );
 }
 
 export function createTimeline(name = "New Local Timeline", data = {}) {
   const timelines = getTimelines();
   const createdAt = nowIso();
+  let preferredId = String(data?.id || data?.timelineId || `local-${createId()}`);
+  const existingIds = new Set(timelines.map((timeline) => timeline.id));
+  while (existingIds.has(preferredId)) {
+    preferredId = `local-${createId()}`;
+  }
   const timeline = normalizeTimelineMetadata({
-    id: `local-${createId()}`,
+    id: preferredId,
     name: String(name || "New Local Timeline").trim() || "New Local Timeline",
+    timelineCode: data?.timelineCode || generateTimelineCode(),
     createdAt,
     updatedAt: createdAt,
     lastOpenedAt: createdAt,
+    createdByUserId: data?.createdByUserId || DEFAULT_LOCAL_USER_ID,
+    createdByName: data?.createdByName || DEFAULT_LOCAL_USER_NAME,
+    updatedByUserId: data?.updatedByUserId || data?.createdByUserId || DEFAULT_LOCAL_USER_ID,
+    updatedByName: data?.updatedByName || data?.createdByName || DEFAULT_LOCAL_USER_NAME,
+    importedByName: data?.importedByName || "",
+    importedAt: data?.importedAt || "",
+    copiedFromTimelineCode: data?.copiedFromTimelineCode || "",
+    copiedFromTimelineName: data?.copiedFromTimelineName || "",
+    lineage: data?.lineage && typeof data.lineage === "object" ? data.lineage : {},
+    revision: Number.isFinite(Number(data?.revision)) ? Number(data.revision) : 0,
   });
 
   writeTimelineIndex([...timelines, timeline]);
@@ -250,7 +350,16 @@ export function renameTimeline(timelineId, name) {
   const timelines = getTimelines();
   const updatedAt = nowIso();
   const nextTimelines = timelines.map((timeline) =>
-    timeline.id === timelineId ? { ...timeline, name: cleanName, updatedAt } : timeline,
+    timeline.id === timelineId
+      ? {
+          ...timeline,
+          name: cleanName,
+          updatedAt,
+          updatedByUserId: timeline.updatedByUserId || DEFAULT_LOCAL_USER_ID,
+          updatedByName: timeline.updatedByName || DEFAULT_LOCAL_USER_NAME,
+          revision: Number.isFinite(Number(timeline.revision)) ? Number(timeline.revision) + 1 : 1,
+        }
+      : timeline,
   );
   writeTimelineIndex(nextTimelines);
   return nextTimelines.find((timeline) => timeline.id === timelineId) || getActiveTimeline();
@@ -270,7 +379,10 @@ function cloneEventsForTimeline(events) {
       media: Array.isArray(event.media)
         ? event.media.map((media, mediaIndex) => ({
             ...media,
-            id: media.id ? `${media.id}-copy-${createId()}` : createId(),
+            id: createId(),
+            ...(media.storage === "indexeddb"
+              ? { indexedDbKey: media.indexedDbKey || media.id }
+              : {}),
             disasterId: nextId,
             order: Number.isFinite(Number(media.order)) ? Number(media.order) : mediaIndex,
           }))
@@ -290,6 +402,12 @@ export function duplicateTimeline(timelineId) {
     events: cloneEventsForTimeline(listEvents(sourceTimeline.id)),
     tags: listTags(sourceTimeline.id),
     plannedGames: listPlannedGames(sourceTimeline.id),
+    copiedFromTimelineCode: sourceTimeline.timelineCode || "",
+    copiedFromTimelineName: sourceTimeline.name || "",
+    lineage: {
+      copiedFromTimelineCode: sourceTimeline.timelineCode || "",
+      copiedFromTimelineName: sourceTimeline.name || "",
+    },
   });
 }
 

@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { CUSTOM_OPTION, cx, getGameYear, joinLines, splitLines, uniqueByName } from "../utils/helpers";
 import { DEFAULT_ACCENT_COLOR, getEventAccentColor, normalizeHexColor } from "../utils/colorUtils";
-import { filesToStagedMedia, formatFileSize, getMediaUrl, isImageMedia, isVideoMedia } from "../utils/mediaUtils";
+import { filesToStagedMedia, formatFileSize, isImageMedia, isVideoMedia } from "../utils/mediaUtils";
+import { useMediaObjectUrl } from "../services/media/useMediaObjectUrl";
 
 const inputClass =
   "w-full rounded-2xl border border-white/15 bg-zinc-900/95 px-4 py-4 text-zinc-50 caret-red-300 outline-none placeholder:text-zinc-300 focus:border-red-300/50 focus:ring-4 focus:ring-red-400/30";
@@ -27,6 +28,52 @@ function emptyDraft() {
     connectionNotes: "",
     media: [],
   };
+}
+
+function DraftMediaTile({ media, onRemove, onCaptionChange }) {
+  const mediaUrl = useMediaObjectUrl(media);
+
+  return (
+    <div className="grid gap-3 rounded-2xl border border-white/12 bg-black/25 p-3">
+      <div className="flex gap-3">
+        <div className="h-16 w-20 flex-none overflow-hidden rounded-xl border border-white/10 bg-zinc-950">
+          {isImageMedia(media) && mediaUrl ? (
+            <img src={mediaUrl} alt="" className="h-full w-full object-cover" />
+          ) : isVideoMedia(media) ? (
+            <div className="grid h-full w-full place-items-center text-sky-100">
+              <Film className="h-5 w-5" aria-hidden="true" />
+            </div>
+          ) : (
+            <div className="grid h-full w-full place-items-center text-[0.65rem] font-black text-zinc-400">
+              MEDIA
+            </div>
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-black text-white">{media.fileName}</p>
+          <p className="mt-1 text-xs text-zinc-300">
+            {media.fileType || "unknown type"} - {formatFileSize(media.fileSize)}
+          </p>
+          <button
+            type="button"
+            onClick={() => onRemove(media.id)}
+            className="mt-2 text-xs font-black text-red-100 underline decoration-red-300/30 underline-offset-4 hover:text-red-50"
+          >
+            Remove evidence
+          </button>
+        </div>
+      </div>
+      <label className="grid gap-1 text-xs font-black text-zinc-200">
+        Optional caption / dumb explanation
+        <input
+          value={media.caption || ""}
+          onChange={(event) => onCaptionChange(media.id, event.target.value)}
+          className="rounded-xl border border-white/15 bg-zinc-900/95 px-3 py-2 text-sm font-medium text-zinc-50 caret-red-300 outline-none placeholder:text-zinc-400 focus:border-sky-300/45 focus:ring-4 focus:ring-sky-300/20"
+          placeholder="Comment on this evidence..."
+        />
+      </label>
+    </div>
+  );
 }
 
 export default function DisasterForm({
@@ -143,10 +190,22 @@ export default function DisasterForm({
   }
 
   function removeMedia(mediaId) {
-    setDraft((current) => ({
-      ...current,
-      media: (current.media || []).filter((media) => media.id !== mediaId),
-    }));
+    setDraft((current) => {
+      const mediaItems = current.media || [];
+      const removed = mediaItems.find((media) => media.id === mediaId);
+      if (removed?.objectUrl) {
+        try {
+          globalThis.URL.revokeObjectURL(removed.objectUrl);
+        } catch {
+          // Ignore stale URL revoke failures; removed draft media should not crash the form.
+        }
+      }
+
+      return {
+        ...current,
+        media: mediaItems.filter((media) => media.id !== mediaId),
+      };
+    });
   }
 
   function updateMediaCaption(mediaId, caption) {
@@ -158,7 +217,7 @@ export default function DisasterForm({
     }));
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
 
     const source = currentSource;
@@ -174,7 +233,7 @@ export default function DisasterForm({
       return;
     }
 
-    const didSave = onSave({
+    const didSave = await onSave({
       id: editingDisaster?.id,
       sortOrder: editingDisaster?.sortOrder,
       year: draft.year.trim(),
@@ -415,7 +474,7 @@ export default function DisasterForm({
                 Evidence is stored locally. The timeline does not phone home, it just judges you from this browser.
               </p>
               <p className="mt-1 text-xs leading-5 text-yellow-100">
-                Media persistence is session-only until IndexedDB evidence storage is promoted from the basement.
+                Media files are stored in local IndexedDB and survive refreshes. This browser now remembers your crimes.
               </p>
             </div>
             <button
@@ -442,45 +501,12 @@ export default function DisasterForm({
           {draft.media?.length ? (
             <div className="grid gap-3 md:grid-cols-2">
               {draft.media.map((media) => (
-                <div key={media.id} className="grid gap-3 rounded-2xl border border-white/12 bg-black/25 p-3">
-                  <div className="flex gap-3">
-                  <div className="h-16 w-20 flex-none overflow-hidden rounded-xl border border-white/10 bg-zinc-950">
-                    {isImageMedia(media) && getMediaUrl(media) ? (
-                      <img src={getMediaUrl(media)} alt="" className="h-full w-full object-cover" />
-                    ) : isVideoMedia(media) ? (
-                      <div className="grid h-full w-full place-items-center text-sky-100">
-                        <Film className="h-5 w-5" aria-hidden="true" />
-                      </div>
-                    ) : (
-                      <div className="grid h-full w-full place-items-center text-[0.65rem] font-black text-zinc-400">
-                        MEDIA
-                      </div>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-black text-white">{media.fileName}</p>
-                    <p className="mt-1 text-xs text-zinc-300">
-                      {media.fileType || "unknown type"} - {formatFileSize(media.fileSize)}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => removeMedia(media.id)}
-                      className="mt-2 text-xs font-black text-red-100 underline decoration-red-300/30 underline-offset-4 hover:text-red-50"
-                    >
-                      Remove evidence
-                    </button>
-                  </div>
-                  </div>
-                  <label className="grid gap-1 text-xs font-black text-zinc-200">
-                    Optional caption / dumb explanation
-                    <input
-                      value={media.caption || ""}
-                      onChange={(event) => updateMediaCaption(media.id, event.target.value)}
-                      className="rounded-xl border border-white/15 bg-zinc-900/95 px-3 py-2 text-sm font-medium text-zinc-50 caret-red-300 outline-none placeholder:text-zinc-400 focus:border-sky-300/45 focus:ring-4 focus:ring-sky-300/20"
-                      placeholder="Comment on this evidence..."
-                    />
-                  </label>
-                </div>
+                <DraftMediaTile
+                  key={media.id}
+                  media={media}
+                  onRemove={removeMedia}
+                  onCaptionChange={updateMediaCaption}
+                />
               ))}
             </div>
           ) : null}

@@ -5,11 +5,12 @@ import BrokenMediaPlaceholder from "./BrokenMediaPlaceholder";
 import { fallbackTagStyle, tagStyles } from "../data/tagStyles";
 import { getEventAccentColor, getReadableTextColor } from "../utils/colorUtils";
 import { cx } from "../utils/helpers";
-import { getMediaUrl, isImageMedia, isVideoMedia } from "../utils/mediaUtils";
+import { isImageMedia, isVideoMedia } from "../utils/mediaUtils";
+import { useMediaObjectUrl } from "../services/media/useMediaObjectUrl";
 
 function MediaPreviewTile({ item }) {
   const [failed, setFailed] = useState(false);
-  const mediaUrl = getMediaUrl(item);
+  const mediaUrl = useMediaObjectUrl(item);
 
   return (
     <div className="h-28 min-w-0 overflow-hidden rounded-xl border border-white/10 bg-zinc-950">

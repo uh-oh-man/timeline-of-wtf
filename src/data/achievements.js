@@ -98,7 +98,13 @@ export const achievements = [
   {
     id: "website_lore_ledger",
     title: "Read The Source Code's Diary",
-    description: "Found the website's secret lore ledger.",
+    description: "Found the website's secret lore helper.",
+    hidden: true,
+  },
+  {
+    id: "lime_unlocked",
+    title: "Put The Lime In The Timeline",
+    description: "Clicked the orb mid-flight and unlocked the fruit-based productivity simulator.",
     hidden: true,
   },
   {

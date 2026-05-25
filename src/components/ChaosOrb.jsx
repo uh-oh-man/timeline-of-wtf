@@ -23,7 +23,14 @@ const hoverMessages = [
   "Observation detected. Panic pending.",
 ];
 
-export default function ChaosOrb({ active, path, triggerKey, onComplete, onHoverTrigger }) {
+export default function ChaosOrb({
+  active,
+  path,
+  triggerKey,
+  onComplete,
+  onHoverTrigger,
+  onForegroundEscapeTap,
+}) {
   const [idle, setIdle] = useState(() => generateIdleOrbPosition());
   const [phase, setPhase] = useState("idle");
   const [panicPath, setPanicPath] = useState(null);
@@ -31,6 +38,7 @@ export default function ChaosOrb({ active, path, triggerKey, onComplete, onHover
   const [hovering, setHovering] = useState(false);
   const [hoverMessage, setHoverMessage] = useState("");
   const hoverTimer = useRef(null);
+  const escapeTapConsumed = useRef(false);
 
   const clearHoverIntent = useCallback(() => {
     window.clearTimeout(hoverTimer.current);
@@ -43,6 +51,7 @@ export default function ChaosOrb({ active, path, triggerKey, onComplete, onHover
     if (!active || !path) return;
 
     clearHoverIntent();
+    escapeTapConsumed.current = false;
     setPanicPath(generateOrbPanicExit(idle));
     setReturnPath(null);
     setPhase("panicExit");
@@ -74,6 +83,7 @@ export default function ChaosOrb({ active, path, triggerKey, onComplete, onHover
   const isIdle = phase === "idle";
   const isPanic = phase === "panicExit";
   const isReturn = phase === "returnToIdle";
+  const isForegroundEscape = phase === "foregroundEscape";
   const activePath = isPanic ? panicPath : isReturn ? returnPath : path;
   const idleAnimate = {
     x: idle.driftX.map((value) => idle.x + value),
@@ -112,7 +122,8 @@ export default function ChaosOrb({ active, path, triggerKey, onComplete, onHover
       <motion.div
         className={[
           "fixed left-0 top-0 overflow-hidden rounded-full",
-          isIdle ? "z-[1] h-40 w-40 pointer-events-auto" : "pointer-events-none z-[9999] h-28 w-28",
+          isIdle || isForegroundEscape ? "pointer-events-auto" : "pointer-events-none",
+          isIdle ? "z-[1] h-40 w-40" : "z-[9999] h-28 w-28",
         ].join(" ")}
         style={orbStyle}
         initial={{ x: idle.x, y: idle.y, scale: 0.74, opacity: 0.18, filter: "blur(10px)" }}
@@ -129,8 +140,16 @@ export default function ChaosOrb({ active, path, triggerKey, onComplete, onHover
                 ease: "anticipate",
               }
         }
-        onPointerEnter={startOrbObservation}
-        onPointerDown={startOrbObservation}
+        onPointerEnter={isIdle ? startOrbObservation : undefined}
+        onPointerDown={() => {
+          if (isForegroundEscape) {
+            if (escapeTapConsumed.current) return;
+            escapeTapConsumed.current = true;
+            onForegroundEscapeTap?.();
+            return;
+          }
+          startOrbObservation();
+        }}
         onPointerUp={clearHoverIntent}
         onPointerLeave={clearHoverIntent}
         onPointerCancel={clearHoverIntent}
