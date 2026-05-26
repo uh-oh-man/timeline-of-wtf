@@ -21,7 +21,10 @@ export function buildPackageManifest({
   mediaCount,
   totalMediaBytes,
   timelineCount = 1,
+  miniGameSaveCount = 0,
+  includedMiniGames = [],
 } = {}) {
+  const normalizedMiniGameSaveCount = Number.isFinite(Number(miniGameSaveCount)) ? Number(miniGameSaveCount) : 0;
   return {
     schema: UHOH_PACKAGE_SCHEMA,
     packageVersion: UHOH_PACKAGE_VERSION,
@@ -42,10 +45,13 @@ export function buildPackageManifest({
       mediaIncluded: Boolean(mediaIncluded),
       mediaCount: Number.isFinite(Number(mediaCount)) ? Number(mediaCount) : 0,
       timelineCount: Number.isFinite(Number(timelineCount)) ? Number(timelineCount) : 1,
+      miniGameSaveCount: normalizedMiniGameSaveCount,
+      includedMiniGames: Array.isArray(includedMiniGames) ? includedMiniGames : [],
       totalMediaBytes: Number.isFinite(Number(totalMediaBytes)) ? Number(totalMediaBytes) : 0,
     },
     paths: {
       timelineData: "data/timeline.json",
+      ...(normalizedMiniGameSaveCount > 0 ? { miniGameSaves: "data/mini-game-saves.json" } : {}),
       mediaFolder: "media/",
     },
   };
@@ -197,11 +203,17 @@ export async function readUhohPackage(fileOrBuffer) {
   }
 
   const timelineData = JSON.parse(await timelineFile.async("string"));
+  const miniGameSavesPath = manifest?.paths?.miniGameSaves || "data/mini-game-saves.json";
+  const miniGameSavesFile = zip.file(miniGameSavesPath);
+  const miniGameSaves = miniGameSavesFile
+    ? JSON.parse(await miniGameSavesFile.async("string"))
+    : null;
 
   return {
     zip,
     manifest,
     timelineData,
+    miniGameSaves,
     warnings: manifestValidation.warnings,
   };
 }
@@ -209,7 +221,7 @@ export async function readUhohPackage(fileOrBuffer) {
 export async function createUhohPackage(
   timelinePayload,
   mediaEntries = [],
-  { manifest = null, onUpdate } = {},
+  { manifest = null, onUpdate, extraJsonFiles = [] } = {},
 ) {
   const packageManifest = manifest || buildPackageManifest({
     createdAt: timelinePayload?.createdAt,
@@ -222,6 +234,11 @@ export async function createUhohPackage(
 
   zip.file("manifest.json", JSON.stringify(packageManifest, null, 2));
   zip.file("data/timeline.json", JSON.stringify(timelinePayload, null, 2));
+
+  extraJsonFiles.forEach((entry) => {
+    if (!entry?.path || entry.data === undefined) return;
+    zip.file(entry.path, JSON.stringify(entry.data, null, 2));
+  });
 
   mediaEntries.forEach((entry) => {
     if (!entry?.path || !entry?.blob) return;

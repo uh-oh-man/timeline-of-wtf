@@ -16,12 +16,15 @@ import ExampleModeBanner from "./components/ExampleModeBanner";
 import ExportOptionsWindow from "./components/ExportOptionsWindow";
 import FakeAdWindow from "./components/FakeAdWindow";
 import FakeCaptchaModal from "./components/FakeCaptchaModal";
+import FloatingWindow from "./components/FloatingWindow";
 import GamesPanel from "./components/GamesPanel";
 import Header from "./components/Header";
 import ImportPreviewWindow from "./components/ImportPreviewWindow";
 import LimeButton from "./components/LimeButton";
 import LimeClickerWindow from "./components/LimeClickerWindow";
+import LimeFruitOverlay from "./components/LimeFruitOverlay";
 import LongTosWindow from "./components/LongTosWindow";
+import MiniGameSaveImportWindow from "./components/MiniGameSaveImportWindow";
 import NodeWebModal from "./components/NodeWebModal";
 import ReactionOverlayHost from "./components/ReactionOverlayHost";
 import SearchBar from "./components/SearchBar";
@@ -110,7 +113,16 @@ import {
   saveLimeUnlocked,
 } from "./services/lime/limeStorage";
 import {
+  clearAllFruitClickerData,
+  loadFruitUnlocked,
+  unlockFruitClicker,
+} from "./services/clickers/fruitClickerStorage";
+import { fruitClickerRegistryById } from "./data/fruitClickerRegistry";
+import {
   applyLemonSteal,
+  applyEggplantSpawnEffect,
+  clearEggplantEvent,
+  clearExpiredEggplant,
   clearLemonEvent,
   computeOrangeBoost,
   createInitialFruitEventState,
@@ -122,11 +134,20 @@ import {
   unlockLimevement,
 } from "./services/lime/limevementsStore";
 import {
+  buildMiniGameSavePayload,
+  exportMiniGameSaves,
+  getDiscoveredMiniGames,
+} from "./services/miniGames/miniGameSaveExport";
+import {
+  importMiniGameSaves,
+  readMiniGameSavesFromFile,
+} from "./services/miniGames/miniGameSaveImport";
+import {
   clearLimeMultiplayerSessions,
-  createLimeMultiplayerSession,
   getActiveLimeMultiplayerSessionId,
   loadLimeMultiplayerSessions,
   setActiveLimeMultiplayerSessionId,
+  upsertLimeMultiplayerSession,
 } from "./services/lime/limeMultiplayerStore";
 import { clonePeerPermissions, defaultPeerPermissions } from "./data/peerPermissions";
 import { createJoinSession, createHostSession } from "./services/peerSync/peerSyncManager";
@@ -139,6 +160,12 @@ import {
   upsertPersistentPeerSession,
 } from "./services/peerSync/persistentSessionsStore";
 import { findMatchingTimelineByCode, mergeTimelineData, updateTimelineData } from "./utils/timelineMerge";
+import {
+  applyPeerTimelineEvent,
+  buildPeerTimelineSnapshot,
+  snapshotToSharedSession,
+} from "./utils/peerTimelineSync";
+import { generateEventCode } from "./utils/identityCodes";
 
 export default function App() {
   const [selectedTimelineSource, setSelectedTimelineSource] = useState(() => loadSelectedTimelineSource());
@@ -198,16 +225,23 @@ export default function App() {
   const [peerAnswerCode, setPeerAnswerCode] = useState("");
   const [peerStatusMessage, setPeerStatusMessage] = useState("");
   const [peerConnectionState, setPeerConnectionState] = useState("disconnected");
+  const [peerBusyMode, setPeerBusyMode] = useState("");
+  const [peerAnswerAccepted, setPeerAnswerAccepted] = useState(false);
+  const [peerDebugState, setPeerDebugState] = useState(null);
   const [peerGuests, setPeerGuests] = useState([]);
   const [peerChatMessages, setPeerChatMessages] = useState([]);
   const [peerChatDraft, setPeerChatDraft] = useState("");
+  const [peerLiveChatOpen, setPeerLiveChatOpen] = useState(false);
+  const [peerSharedTimelineSession, setPeerSharedTimelineSession] = useState(null);
   const [persistentPeerSessions, setPersistentPeerSessions] = useState(() => loadPersistentPeerSessions());
   const [pendingImport, setPendingImport] = useState(null);
+  const [pendingMiniGameSaveImport, setPendingMiniGameSaveImport] = useState(null);
   const [exportOptionsOpen, setExportOptionsOpen] = useState(false);
   const [exportBusyMode, setExportBusyMode] = useState("");
   const [exportTimelineName, setExportTimelineName] = useState("");
   const [exportFileName, setExportFileName] = useState("");
   const [exportFileNameEdited, setExportFileNameEdited] = useState(false);
+  const [selectedExportGameSaveIds, setSelectedExportGameSaveIds] = useState([]);
   const [exportProgress, setExportProgress] = useState({
     active: false,
     phase: "",
@@ -229,11 +263,14 @@ export default function App() {
   const [limeMode, setLimeMode] = useState("solo");
   const [limeMultiplayerSessions, setLimeMultiplayerSessions] = useState(() => loadLimeMultiplayerSessions());
   const [activeLimeMultiplayerSessionId, setActiveLimeMultiplayerSessionIdState] = useState(() => getActiveLimeMultiplayerSessionId());
+  const [fruitSavesVersion, setFruitSavesVersion] = useState(0);
   const [limeState, setLimeState] = useState(() => {
     const loaded = loadLimeState();
     return loaded.unlocked ? loaded : { ...loaded, unlocked: loadLimeUnlocked() };
   });
   const [limeFruitState, setLimeFruitState] = useState(() => createInitialFruitEventState(new Date()));
+  const [sharedLimeState, setSharedLimeState] = useState(null);
+  const [sharedLimeRevision, setSharedLimeRevision] = useState(0);
   const [limevementsState, setLimevementsState] = useState(() => loadLimevementsState());
   const [limevementsOpen, setLimevementsOpen] = useState(false);
   const [limeSaveStatus, setLimeSaveStatus] = useState("Saved");
@@ -246,6 +283,7 @@ export default function App() {
   const titleBadgeClickTimes = useRef([]);
   const exampleFileInputRef = useRef(null);
   const importFileInputRef = useRef(null);
+  const gameSaveImportFileInputRef = useRef(null);
   const systemToastTimer = useRef(null);
   const timelineChangeTimers = useRef([]);
   const disastersRef = useRef(disasters);
@@ -254,7 +292,20 @@ export default function App() {
   const limeSaveTimerRef = useRef(null);
   const limeStateRef = useRef(limeState);
   const limeFruitStateRef = useRef(limeFruitState);
+  const sharedLimeStateRef = useRef(sharedLimeState);
+  const sharedLimeRevisionRef = useRef(sharedLimeRevision);
+  const peerSharedTimelineSessionRef = useRef(peerSharedTimelineSession);
+  const peerGuestsRef = useRef(peerGuests);
+  const shareBindingRef = useRef(shareBinding);
+  const peerModeRef = useRef(peerMode);
+  const peerConnectionStateRef = useRef(peerConnectionState);
+  const activeLocalTimelineIdRef = useRef(activeLocalTimelineId);
+  const selectedTimelineSourceRef = useRef(selectedTimelineSource);
+  const exampleModeRef = useRef(exampleMode);
+  const limeModeRef = useRef(limeMode);
+  const mutateHostSharedLimeRef = useRef(null);
   const peerSessionRef = useRef(null);
+  const peerAnswerAppliedRef = useRef(false);
   const footerMessage = useMemo(() => pickRandom(footerMessages), []);
 
   const buildExampleEvents = useCallback((extraMedia = []) => {
@@ -264,13 +315,31 @@ export default function App() {
   }, []);
 
   const activeSource = exampleMode ? SOURCE_TYPES.EXAMPLE : selectedTimelineSource;
-  const canEditCurrentTimeline = canEditTimelineSource(activeSource, mockAuthSession);
-  const readOnlyReason = canEditCurrentTimeline ? "" : getReadOnlyReason(activeSource, mockAuthSession);
+  const isPeerConnected = peerConnectionState === "connected";
+  const isViewingPeerSharedTimeline = Boolean(isPeerConnected && peerMode === "join" && peerSharedTimelineSession?.connected);
+  const canEditPeerSharedTimeline = Boolean(peerSharedTimelineSession?.permissions?.timeline?.canEditEntries ?? true);
+  const canEditCurrentTimeline = isViewingPeerSharedTimeline
+    ? canEditPeerSharedTimeline
+    : canEditTimelineSource(activeSource, mockAuthSession);
+  const readOnlyReason = canEditCurrentTimeline
+    ? ""
+    : isViewingPeerSharedTimeline
+      ? "Host has not allowed guests to edit this shared timeline."
+      : getReadOnlyReason(activeSource, mockAuthSession);
   const activeLocalTimeline = useMemo(
     () => localTimelines.find((timeline) => timeline.id === activeLocalTimelineId) || localTimelines[0] || null,
     [activeLocalTimelineId, localTimelines],
   );
   const activeTimelineMetadata = useMemo(() => {
+    if (isViewingPeerSharedTimeline) {
+      return {
+        id: peerSharedTimelineSession.timelineId || "peer-shared",
+        timelineCode: peerSharedTimelineSession.timelineCode || "",
+        name: peerSharedTimelineSession.timelineName || "Shared Timeline",
+        type: "peer_shared",
+        description: `Viewing shared timeline from ${peerSharedTimelineSession.hostName || "Host"}.`,
+      };
+    }
     if (activeSource === SOURCE_TYPES.EXAMPLE) {
       return {
         id: "example",
@@ -283,9 +352,21 @@ export default function App() {
       return mockSyncedTimelineSource.getActiveTimeline();
     }
     return activeLocalTimeline;
-  }, [activeLocalTimeline, activeSource]);
+  }, [activeLocalTimeline, activeSource, isViewingPeerSharedTimeline, peerSharedTimelineSession]);
 
-  const displayDisasters = exampleMode ? exampleSessionEvents : disasters;
+  const displayDisasters = useMemo(() => {
+    if (isViewingPeerSharedTimeline) return peerSharedTimelineSession.events || [];
+    if (exampleMode) return exampleSessionEvents;
+    return disasters;
+  }, [disasters, exampleMode, exampleSessionEvents, isViewingPeerSharedTimeline, peerSharedTimelineSession]);
+  const displayTags = useMemo(
+    () => (isViewingPeerSharedTimeline ? peerSharedTimelineSession.tags || defaultTags : tags),
+    [isViewingPeerSharedTimeline, peerSharedTimelineSession, tags],
+  );
+  const displayPlannedGames = useMemo(
+    () => (isViewingPeerSharedTimeline ? peerSharedTimelineSession.plannedGames || [] : plannedGames),
+    [isViewingPeerSharedTimeline, peerSharedTimelineSession, plannedGames],
+  );
   const games = useMemo(() => getGameNames(displayDisasters), [displayDisasters]);
   const gameStats = useMemo(() => getGameStats(displayDisasters), [displayDisasters]);
   const editingDisaster = useMemo(
@@ -350,17 +431,20 @@ export default function App() {
       || null,
     [activeLimeMultiplayerSessionId, limeMultiplayerSessions],
   );
+  const discoveredMiniGames = getDiscoveredMiniGames();
+  const sharedLimeAvailable = Boolean(isPeerConnected && sharedLimeState);
+  const activeLimeGameState = limeMode === "multiplayer" && sharedLimeAvailable ? sharedLimeState : limeState;
   const limeOrangeMultiplier = useMemo(
-    () => computeOrangeBoost(limeFruitState, new Date()),
-    [limeFruitState],
+    () => computeOrangeBoost(limeFruitState, new Date(), activeLimeGameState),
+    [activeLimeGameState, limeFruitState],
   );
   const limePerClick = useMemo(
-    () => calculateLimesPerClick(limeState) * limeOrangeMultiplier,
-    [limeOrangeMultiplier, limeState],
+    () => calculateLimesPerClick(activeLimeGameState) * limeOrangeMultiplier,
+    [activeLimeGameState, limeOrangeMultiplier],
   );
   const limePerSecond = useMemo(
-    () => calculateLimesPerSecond(limeState) * limeOrangeMultiplier,
-    [limeOrangeMultiplier, limeState],
+    () => calculateLimesPerSecond(activeLimeGameState) * limeOrangeMultiplier,
+    [activeLimeGameState, limeOrangeMultiplier],
   );
 
   const majorWindowOpen = Boolean(
@@ -425,6 +509,50 @@ export default function App() {
   }, [limeFruitState]);
 
   useEffect(() => {
+    sharedLimeStateRef.current = sharedLimeState;
+  }, [sharedLimeState]);
+
+  useEffect(() => {
+    sharedLimeRevisionRef.current = sharedLimeRevision;
+  }, [sharedLimeRevision]);
+
+  useEffect(() => {
+    peerSharedTimelineSessionRef.current = peerSharedTimelineSession;
+  }, [peerSharedTimelineSession]);
+
+  useEffect(() => {
+    peerGuestsRef.current = peerGuests;
+  }, [peerGuests]);
+
+  useEffect(() => {
+    shareBindingRef.current = shareBinding;
+  }, [shareBinding]);
+
+  useEffect(() => {
+    peerModeRef.current = peerMode;
+  }, [peerMode]);
+
+  useEffect(() => {
+    peerConnectionStateRef.current = peerConnectionState;
+  }, [peerConnectionState]);
+
+  useEffect(() => {
+    activeLocalTimelineIdRef.current = activeLocalTimelineId;
+  }, [activeLocalTimelineId]);
+
+  useEffect(() => {
+    selectedTimelineSourceRef.current = selectedTimelineSource;
+  }, [selectedTimelineSource]);
+
+  useEffect(() => {
+    exampleModeRef.current = exampleMode;
+  }, [exampleMode]);
+
+  useEffect(() => {
+    limeModeRef.current = limeMode;
+  }, [limeMode]);
+
+  useEffect(() => {
     saveSelectedTimelineSource(activeSource);
   }, [activeSource]);
 
@@ -474,20 +602,34 @@ export default function App() {
       let unlockedOrange = false;
       let enteredDebt = false;
       let recoveredDebt = false;
+      const sharedModeOwnsFruit =
+        limeModeRef.current === "multiplayer"
+        && peerModeRef.current === "host"
+        && peerConnectionStateRef.current === "connected"
+        && Boolean(sharedLimeStateRef.current);
       setLimeState((current) => {
         const beforeCount = Number(current.limeCount || 0);
         const offline = applyOfflineProgress(current, now);
         let nextState = offline.state;
-        let nextFruitState = maybeSpawnFruitEvent(limeFruitStateRef.current, {
+        if (sharedModeOwnsFruit) {
+          return nextState;
+        }
+        const clearedEggplant = clearExpiredEggplant(limeFruitStateRef.current, nextState, now);
+        nextState = clearedEggplant.limeState || nextState;
+        let nextFruitState = maybeSpawnFruitEvent(clearedEggplant.fruitState, {
           unlocked: Boolean(nextState.unlocked || limeUnlocked),
           now,
+          limeState: nextState,
         });
+        if (!limeFruitStateRef.current?.eggplant && nextFruitState?.eggplant) {
+          nextState = applyEggplantSpawnEffect(nextState, nextFruitState, now);
+        }
         if (!limeFruitStateRef.current?.orange && nextFruitState?.orange) {
           unlockedOrange = true;
         }
-        const orangeBoost = computeOrangeBoost(nextFruitState, now);
+        const orangeBoost = computeOrangeBoost(nextFruitState, now, nextState);
         if (orangeBoost > 1 && offline.elapsedSeconds > 0) {
-          const basePerSecond = calculateLimesPerSecond(current);
+          const basePerSecond = calculateLimesPerSecond(nextState, now);
           const bonus = basePerSecond * (orangeBoost - 1) * offline.elapsedSeconds;
           nextState = {
             ...nextState,
@@ -563,6 +705,68 @@ export default function App() {
   }, [persistLimeStateNow]);
 
   useEffect(() => {
+    if (limeMode === "multiplayer" && !sharedLimeAvailable) {
+      setLimeMode("solo");
+    }
+  }, [limeMode, sharedLimeAvailable]);
+
+  useEffect(() => {
+    if (peerMode !== "host" || peerConnectionState !== "connected" || !sharedLimeState) return undefined;
+    const intervalId = window.setInterval(() => {
+      const now = new Date();
+      let unlockedOrange = false;
+      let enteredDebt = false;
+      let recoveredDebt = false;
+      mutateHostSharedLimeRef.current?.((current) => {
+        const beforeCount = Number(current?.limeCount || 0);
+        const offline = applyOfflineProgress(current, now);
+        let nextState = offline.state;
+        const clearedEggplant = clearExpiredEggplant(limeFruitStateRef.current, nextState, now);
+        nextState = clearedEggplant.limeState || nextState;
+        let nextFruitState = maybeSpawnFruitEvent(clearedEggplant.fruitState, {
+          unlocked: Boolean(nextState.unlocked),
+          now,
+          limeState: nextState,
+        });
+        if (!limeFruitStateRef.current?.eggplant && nextFruitState?.eggplant) {
+          nextState = applyEggplantSpawnEffect(nextState, nextFruitState, now);
+        }
+        if (!limeFruitStateRef.current?.orange && nextFruitState?.orange) {
+          unlockedOrange = true;
+        }
+        const orangeBoost = computeOrangeBoost(nextFruitState, now, nextState);
+        if (orangeBoost > 1 && offline.elapsedSeconds > 0) {
+          const basePerSecond = calculateLimesPerSecond(nextState, now);
+          const bonus = basePerSecond * (orangeBoost - 1) * offline.elapsedSeconds;
+          nextState = {
+            ...nextState,
+            limeCount: Number(nextState.limeCount || 0) + bonus,
+            totalLimesEarned: Number(nextState.totalLimesEarned || 0) + bonus,
+            updatedAt: now.toISOString(),
+            lastUpdatedAt: now.toISOString(),
+          };
+        }
+
+        const lemonResult = applyLemonSteal(nextState, nextFruitState, now);
+        nextState = lemonResult.limeState;
+        nextFruitState = lemonResult.fruitState;
+        const afterCount = Number(nextState.limeCount || 0);
+        if (beforeCount >= 0 && afterCount < 0) enteredDebt = true;
+        if (beforeCount < 0 && afterCount >= 0) recoveredDebt = true;
+        if (lemonResult.enteredDebt) enteredDebt = true;
+        limeFruitStateRef.current = nextFruitState;
+        setLimeFruitState(nextFruitState);
+        return nextState;
+      });
+      if (unlockedOrange) unlockLimevementId("first_orange");
+      if (enteredDebt) unlockLimevementId("entered_debt");
+      if (recoveredDebt) unlockLimevementId("recovered_from_debt");
+    }, 1500);
+
+    return () => window.clearInterval(intervalId);
+  }, [peerConnectionState, peerMode, sharedLimeState, unlockLimevementId]);
+
+  useEffect(() => {
     return () => revokeObjectUrls(exampleMediaItems);
   }, [exampleMediaItems]);
 
@@ -592,6 +796,10 @@ export default function App() {
     setPeerInviteCode("");
     setPeerAnswerCode("");
     setPeerGuests([]);
+    setPeerBusyMode("");
+    setPeerAnswerAccepted(false);
+    setPeerDebugState(null);
+    peerAnswerAppliedRef.current = false;
   }, [peerMode]);
 
   function hashText(input) {
@@ -604,12 +812,14 @@ export default function App() {
     return `h${Math.abs(hash)}`;
   }
 
-  function buildTimelineChecksumForBinding(binding = shareBinding) {
+  function buildTimelineChecksumForBinding(binding = shareBindingRef.current) {
     if (!binding) return null;
-    const timelineEvents = binding.sharedTimelineId === activeLocalTimelineId
-      ? disasters
+    const timelineEvents = binding.sharedTimelineId === activeLocalTimelineIdRef.current
+      && selectedTimelineSourceRef.current === SOURCE_TYPES.LOCAL
+      && !exampleModeRef.current
+      ? disastersRef.current
       : localTimelineSource.listEvents(binding.sharedTimelineId);
-    const revision = Number(localTimelines.find((timeline) => timeline.id === binding.sharedTimelineId)?.revision || 0);
+    const revision = Number(localTimelineSource.getTimelines().find((timeline) => timeline.id === binding.sharedTimelineId)?.revision || 0);
     return {
       timelineCode: binding.sharedTimelineCode || "",
       revision,
@@ -622,6 +832,17 @@ export default function App() {
     peerSessionRef.current?.closeSession?.();
     peerSessionRef.current = null;
     setPeerConnectionState("disconnected");
+    setPeerBusyMode("");
+    setPeerAnswerAccepted(false);
+    setPeerDebugState(null);
+    peerAnswerAppliedRef.current = false;
+    setPeerSharedTimelineSession(null);
+    setPeerChatMessages([]);
+    setPeerChatDraft("");
+    setPeerLiveChatOpen(false);
+    setSharedLimeState(null);
+    setSharedLimeRevision(0);
+    setLimeMode("solo");
     setPeerStatusMessage("Disconnected");
   }
 
@@ -639,11 +860,203 @@ export default function App() {
     setPersistentPeerSessions(loadPersistentPeerSessions());
   }
 
+  function getBoundTimelineData(binding = shareBindingRef.current) {
+    if (!binding?.sharedTimelineId) return null;
+    const timeline = localTimelineSource.getTimelines().find((item) => item.id === binding.sharedTimelineId) || null;
+    const events = binding.sharedTimelineId === activeLocalTimelineIdRef.current
+      && selectedTimelineSourceRef.current === SOURCE_TYPES.LOCAL
+      && !exampleModeRef.current
+      ? disastersRef.current
+      : localTimelineSource.listEvents(binding.sharedTimelineId);
+    return {
+      timeline,
+      events,
+      tags: localTimelineSource.listTags(binding.sharedTimelineId, defaultTags),
+      plannedGames: localTimelineSource.listPlannedGames(binding.sharedTimelineId, defaultPlannedGames),
+      revision: Number(timeline?.revision || 0),
+    };
+  }
+
+  function sendBoundTimelineSnapshot(session = peerSessionRef.current, reason = "initial") {
+    const binding = shareBindingRef.current;
+    if (!session || peerModeRef.current !== "host") return;
+    const data = getBoundTimelineData();
+    if (!data) return;
+    const snapshot = buildPeerTimelineSnapshot({
+      sessionId: session.sessionId,
+      timelineId: binding?.sharedTimelineId || data.timeline?.id || "",
+      timelineCode: binding?.sharedTimelineCode || data.timeline?.timelineCode || "",
+      timelineName: binding?.sharedTimelineName || data.timeline?.name || "Shared Timeline",
+      hostName: peerDisplayName || mockAuthSession?.username || "Host",
+      events: data.events,
+      tags: data.tags,
+      plannedGames: data.plannedGames,
+      revision: data.revision,
+    });
+    void session.sendMessage({ ...snapshot, reason });
+  }
+
+  function updateBoundTimelineEvents(nextEvents, { updateVisible = true } = {}) {
+    const binding = shareBindingRef.current;
+    if (!binding?.sharedTimelineId) return 0;
+    localTimelineSource.saveEvents(binding.sharedTimelineId, nextEvents);
+    const timelines = localTimelineSource.getTimelines();
+    const timeline = timelines.find((item) => item.id === binding.sharedTimelineId);
+    setLocalTimelines(timelines);
+    if (updateVisible && binding.sharedTimelineId === activeLocalTimelineId && selectedTimelineSource === SOURCE_TYPES.LOCAL && !exampleMode) {
+      setDisasters(nextEvents);
+    }
+    return Number(timeline?.revision || 0);
+  }
+
+  function broadcastTimelineMutation(message) {
+    const binding = shareBindingRef.current;
+    if (peerModeRef.current !== "host" || peerConnectionStateRef.current !== "connected") return;
+    void peerSessionRef.current?.sendMessage({
+      timelineCode: binding?.sharedTimelineCode || "",
+      timelineId: binding?.sharedTimelineId || "",
+      sentByName: peerDisplayName || mockAuthSession?.username || "Host",
+      ...message,
+    });
+  }
+
+  function applyGuestTimelineRequest(message) {
+    if (peerModeRef.current !== "host" || !shareBindingRef.current?.sharedTimelineId) return;
+    const data = getBoundTimelineData();
+    if (!data) return;
+    const currentEvents = Array.isArray(data.events) ? data.events : [];
+    const now = new Date().toISOString();
+
+    if (message.type === PEER_MESSAGE_TYPES.EVENT_CREATE_REQUEST) {
+      const requested = message.event || {};
+      const nextEvent = {
+        ...requested,
+        id: requested.id || createId(),
+        eventCode: requested.eventCode || generateEventCode(),
+        createdAt: requested.createdAt || now,
+        updatedAt: now,
+      };
+      const revision = updateBoundTimelineEvents([...currentEvents, nextEvent]);
+      broadcastTimelineMutation({
+        type: PEER_MESSAGE_TYPES.EVENT_CREATED,
+        event: nextEvent,
+        revision,
+      });
+      markTimelineChange(nextEvent.id, "created", "peer");
+      return;
+    }
+
+    if (message.type === PEER_MESSAGE_TYPES.EVENT_UPDATE_REQUEST) {
+      const requested = message.updatedEvent || message.event || {};
+      let updatedEvent = null;
+      const nextEvents = currentEvents.map((event) => {
+        const matches = event.id === message.eventId || event.id === requested.id || (message.eventCode && event.eventCode === message.eventCode);
+        if (!matches) return event;
+        updatedEvent = {
+          ...event,
+          ...(message.patch || {}),
+          ...requested,
+          updatedAt: now,
+        };
+        return updatedEvent;
+      });
+      if (!updatedEvent) return;
+      const revision = updateBoundTimelineEvents(nextEvents);
+      broadcastTimelineMutation({
+        type: PEER_MESSAGE_TYPES.EVENT_UPDATED,
+        eventId: updatedEvent.id,
+        eventCode: updatedEvent.eventCode || "",
+        updatedEvent,
+        patch: message.patch || {},
+        revision,
+      });
+      markTimelineChange(updatedEvent.id, "updated", "peer");
+      return;
+    }
+
+    if (message.type === PEER_MESSAGE_TYPES.EVENT_DELETE_REQUEST) {
+      const deletingEvent = currentEvents.find((event) => event.id === message.eventId || (message.eventCode && event.eventCode === message.eventCode));
+      if (!deletingEvent) return;
+      const revision = updateBoundTimelineEvents(currentEvents.filter((event) => event.id !== deletingEvent.id));
+      broadcastTimelineMutation({
+        type: PEER_MESSAGE_TYPES.EVENT_DELETED,
+        eventId: deletingEvent.id,
+        eventCode: deletingEvent.eventCode || "",
+        revision,
+      });
+      markTimelineChange(deletingEvent.id, "deleted", "peer");
+    }
+  }
+
+  function buildUnlockedSharedLimeState(seedState = limeStateRef.current) {
+    const now = new Date().toISOString();
+    return {
+      ...createDefaultLimeState(),
+      ...(seedState || {}),
+      unlocked: true,
+      updatedAt: now,
+      lastUpdatedAt: now,
+    };
+  }
+
+  function ensureHostSharedLimeState() {
+    if (sharedLimeStateRef.current) return sharedLimeStateRef.current;
+    const next = buildUnlockedSharedLimeState();
+    sharedLimeStateRef.current = next;
+    setSharedLimeState(next);
+    setSharedLimeRevision(0);
+    return next;
+  }
+
+  function broadcastSharedLimeState(nextState = sharedLimeStateRef.current, nextRevision = sharedLimeRevisionRef.current) {
+    const binding = shareBindingRef.current;
+    if (peerModeRef.current !== "host" || peerConnectionStateRef.current !== "connected" || !nextState) return;
+    void peerSessionRef.current?.sendMessage({
+      type: PEER_MESSAGE_TYPES.LIME_STATE,
+      sessionId: binding?.sessionId || peerSessionRef.current?.sessionId || "",
+      state: nextState,
+      fruitState: limeFruitStateRef.current,
+      revision: nextRevision,
+      sentAt: new Date().toISOString(),
+    });
+  }
+
+  function mutateHostSharedLime(mutator, { broadcast = true } = {}) {
+    const base = ensureHostSharedLimeState();
+    const next = mutator(base);
+    if (!next) return base;
+    const nextRevision = sharedLimeRevisionRef.current + 1;
+    sharedLimeStateRef.current = next;
+    sharedLimeRevisionRef.current = nextRevision;
+    setSharedLimeState(next);
+    setSharedLimeRevision(nextRevision);
+    const session = upsertLimeMultiplayerSession({
+      ...(activeLimeMultiplayerSession || {}),
+      id: activeLimeMultiplayerSession?.id || `lime_mp_${shareBindingRef.current?.sessionId || Date.now()}`,
+      name: activeLimeMultiplayerSession?.name || "Shared Lime",
+      hostUserId: mockAuthSession?.username || "local-user",
+      hostName: peerDisplayName || mockAuthSession?.username || "Host",
+      state: next,
+      revision: nextRevision,
+      updatedAt: new Date().toISOString(),
+      lastSyncedAt: new Date().toISOString(),
+    });
+    setActiveLimeMultiplayerSessionId(session.id);
+    refreshLimeMultiplayerSessions();
+    if (broadcast) broadcastSharedLimeState(next, nextRevision);
+    return next;
+  }
+  mutateHostSharedLimeRef.current = mutateHostSharedLime;
+
   function attachPeerSessionListeners(session) {
     session.onStateChange((state) => {
       setPeerConnectionState(state.connectionState);
+      setPeerDebugState(state.debug || null);
       if (state.connectionState === "connected") {
+        setPeerBusyMode("");
+        setPeerAnswerAccepted(true);
         setPeerStatusMessage("Connected");
+        setShareBinding((current) => current ? { ...current, status: "connected" } : current);
         rememberPersistentSession({
           sessionId: state.sessionId,
           hostName: state.hostDisplayName || "Host",
@@ -657,10 +1070,21 @@ export default function App() {
           encrypted: Boolean(state.hasCryptoKey),
           cachedTimelineSnapshot: {
             events: displayDisasters,
-            tags,
-            plannedGames,
+            tags: displayTags,
+            plannedGames: displayPlannedGames,
           },
         });
+        if (state.role === "host") {
+          const shared = ensureHostSharedLimeState();
+          unlockLimevementId("multiplayer_started");
+          sendBoundTimelineSnapshot(session, "connected");
+          broadcastSharedLimeState(shared, sharedLimeRevisionRef.current);
+        } else {
+          void session.sendMessage({
+            type: PEER_MESSAGE_TYPES.REQUEST_TIMELINE_SNAPSHOT,
+            reason: "connected",
+          });
+        }
       }
     });
 
@@ -670,17 +1094,49 @@ export default function App() {
         showSystemToast(event.message || "Security key mismatch.");
         return;
       }
+      if (event.type === "answer-already-accepted") {
+        setPeerStatusMessage(event.message || "That response code was already accepted.");
+        return;
+      }
       if (event.type === "channel-open") {
+        setPeerStatusMessage("Secure channel open. Verifying peer...");
+        return;
+      }
+      if (event.type === "peer-verified") {
+        setPeerBusyMode("");
+        setPeerAnswerAccepted(true);
         setPeerStatusMessage("Connected");
+        if (session.getDebugState?.().role === "host") {
+          const shared = ensureHostSharedLimeState();
+          sendBoundTimelineSnapshot(session, "peer-verified");
+          broadcastSharedLimeState(shared, sharedLimeRevisionRef.current);
+        }
         return;
       }
       if (event.type === "channel-close") {
         setPeerStatusMessage("Disconnected");
+        return;
+      }
+      if (event.type === "ice-candidate-error") {
+        globalThis.console?.warn?.("Peer candidate lookup warning", event);
       }
     });
 
     session.onMessage((message) => {
       if (!message?.type) return;
+      if (message.type === PEER_MESSAGE_TYPES.PEER_KICKED) {
+        peerSessionRef.current?.closeSession?.();
+        peerSessionRef.current = null;
+        setPeerConnectionState("disconnected");
+        setPeerBusyMode("");
+        setPeerAnswerAccepted(false);
+        setPeerDebugState(null);
+        peerAnswerAppliedRef.current = false;
+        setShareBinding(null);
+        setPeerStatusMessage("You were removed from the shared timeline by the host.");
+        showSystemToast("You were removed from the shared timeline by the host.");
+        return;
+      }
       if (message.type === PEER_MESSAGE_TYPES.GUEST_RENAMED) {
         if (message.guestId) {
           upsertPeerGuest({
@@ -704,6 +1160,100 @@ export default function App() {
             sentAt: message.sentAt || new Date().toISOString(),
           },
         ]);
+        return;
+      }
+      if (message.type === PEER_MESSAGE_TYPES.REQUEST_TIMELINE_SNAPSHOT) {
+        sendBoundTimelineSnapshot(session, message.reason || "peer-request");
+        return;
+      }
+      if (message.type === PEER_MESSAGE_TYPES.TIMELINE_SNAPSHOT) {
+        const sharedSession = snapshotToSharedSession(message);
+        setPeerSharedTimelineSession({
+          ...sharedSession,
+          permissions: clonePeerPermissions(defaultPeerPermissions),
+        });
+        setShowForm(false);
+        setEditingId(null);
+        setDetailDisasterId(null);
+        showSystemToast(`Viewing shared timeline from ${sharedSession.hostName}.`);
+        return;
+      }
+      if (
+        message.type === PEER_MESSAGE_TYPES.EVENT_CREATED
+        || message.type === PEER_MESSAGE_TYPES.EVENT_UPDATED
+        || message.type === PEER_MESSAGE_TYPES.EVENT_DELETED
+      ) {
+        setPeerSharedTimelineSession((current) => applyPeerTimelineEvent(current, message));
+        if (message.event?.id || message.updatedEvent?.id || message.eventId) {
+          markTimelineChange(message.event?.id || message.updatedEvent?.id || message.eventId, message.type === PEER_MESSAGE_TYPES.EVENT_DELETED ? "deleted" : message.type === PEER_MESSAGE_TYPES.EVENT_CREATED ? "created" : "updated", "peer");
+        }
+        return;
+      }
+      if (
+        message.type === PEER_MESSAGE_TYPES.EVENT_CREATE_REQUEST
+        || message.type === PEER_MESSAGE_TYPES.EVENT_UPDATE_REQUEST
+        || message.type === PEER_MESSAGE_TYPES.EVENT_DELETE_REQUEST
+      ) {
+        applyGuestTimelineRequest(message);
+        return;
+      }
+      if (message.type === PEER_MESSAGE_TYPES.LIME_STATE) {
+        setSharedLimeState(message.state || null);
+        sharedLimeStateRef.current = message.state || null;
+        setSharedLimeRevision(Number(message.revision || 0));
+        if (message.fruitState) {
+          setLimeFruitState(message.fruitState);
+          limeFruitStateRef.current = message.fruitState;
+        }
+        return;
+      }
+      if (message.type === PEER_MESSAGE_TYPES.LIME_CLICK_REQUEST && peerModeRef.current === "host") {
+        mutateHostSharedLime((current) => {
+          const { state: progressed } = applyOfflineProgress(current, new Date());
+          const clickGain = calculateLimesPerClick(progressed) * computeOrangeBoost(limeFruitStateRef.current, new Date(), progressed);
+          const now = new Date().toISOString();
+          return {
+            ...progressed,
+            limeCount: Number(progressed.limeCount || 0) + clickGain,
+            totalLimesEarned: Number(progressed.totalLimesEarned || 0) + clickGain,
+            totalClicks: Number(progressed.totalClicks || 0) + 1,
+            updatedAt: now,
+            lastUpdatedAt: now,
+          };
+        });
+        return;
+      }
+      if (
+        (message.type === PEER_MESSAGE_TYPES.LIME_UPGRADE_REQUEST || message.type === PEER_MESSAGE_TYPES.LIME_BUY_UPGRADE_REQUEST)
+        && peerModeRef.current === "host"
+      ) {
+        const upgrade = getUpgradeById(message.upgradeId);
+        if (!upgrade) return;
+        mutateHostSharedLime((current) => {
+          const { state: progressed } = applyOfflineProgress(current, new Date());
+          const result = purchaseUpgrade(progressed, upgrade);
+          return result.purchased ? { ...result.state, unlocked: true } : progressed;
+        });
+        return;
+      }
+      if (message.type === PEER_MESSAGE_TYPES.LIME_FRUIT_CLEARED && peerModeRef.current === "host") {
+        if (message.fruitType === "lemon" && limeFruitStateRef.current?.lemon) {
+          const nextFruitState = clearLemonEvent(limeFruitStateRef.current, new Date());
+          limeFruitStateRef.current = nextFruitState;
+          setLimeFruitState(nextFruitState);
+          broadcastSharedLimeState(sharedLimeStateRef.current, sharedLimeRevisionRef.current);
+          unlockLimevementId("stopped_lemon");
+        }
+        if (message.fruitType === "eggplant" && limeFruitStateRef.current?.eggplant) {
+          const cleared = clearEggplantEvent(limeFruitStateRef.current, sharedLimeStateRef.current, new Date());
+          limeFruitStateRef.current = cleared.fruitState;
+          setLimeFruitState(cleared.fruitState);
+          if (cleared.limeState) {
+            sharedLimeStateRef.current = cleared.limeState;
+            setSharedLimeState(cleared.limeState);
+          }
+          broadcastSharedLimeState(sharedLimeStateRef.current, sharedLimeRevisionRef.current);
+        }
         return;
       }
       if (message.type === PEER_MESSAGE_TYPES.TIMELINE_CHECKSUM) {
@@ -1094,10 +1644,36 @@ export default function App() {
   }, [limeState.unlocked, limeUnlocked, showSystemToast, unlockLime]);
 
   const onClickLime = useCallback(() => {
+    if (limeMode === "multiplayer" && sharedLimeAvailable) {
+      if (peerModeRef.current === "host") {
+        mutateHostSharedLimeRef.current?.((current) => {
+          const { state: progressed } = applyOfflineProgress(current, new Date());
+          const clickGain = calculateLimesPerClick(progressed) * computeOrangeBoost(limeFruitStateRef.current, new Date(), progressed);
+          const now = new Date().toISOString();
+          return {
+            ...progressed,
+            unlocked: true,
+            limeCount: Number(progressed.limeCount || 0) + clickGain,
+            totalLimesEarned: Number(progressed.totalLimesEarned || 0) + clickGain,
+            totalClicks: Number(progressed.totalClicks || 0) + 1,
+            updatedAt: now,
+            lastUpdatedAt: now,
+          };
+        });
+      } else {
+        void peerSessionRef.current?.sendMessage({
+          type: PEER_MESSAGE_TYPES.LIME_CLICK_REQUEST,
+          requestId: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        });
+      }
+      unlockLimevementId("multiplayer_click");
+      return;
+    }
+
     setLimeOfflineGains(0);
     setLimeState((current) => {
       const { state: progressed } = applyOfflineProgress(current, new Date());
-      const clickGain = calculateLimesPerClick(progressed) * computeOrangeBoost(limeFruitState, new Date());
+      const clickGain = calculateLimesPerClick(progressed) * computeOrangeBoost(limeFruitState, new Date(), progressed);
       const now = new Date().toISOString();
       const nextCount = Number(progressed.limeCount || 0) + clickGain;
       const nextTotal = Number(progressed.totalLimesEarned || 0) + clickGain;
@@ -1115,28 +1691,57 @@ export default function App() {
     if (limeMode === "multiplayer") {
       unlockLimevementId("multiplayer_click");
     }
-  }, [limeFruitState, limeMode, unlockLimevementId]);
+  }, [limeFruitState, limeMode, sharedLimeAvailable, unlockLimevementId]);
 
   const onPurchaseLimeUpgrade = useCallback((upgradeId) => {
     const upgrade = getUpgradeById(upgradeId);
     if (!upgrade) return;
-    setLimeState((current) => {
-      const { state: progressed } = applyOfflineProgress(current, new Date());
-      const result = purchaseUpgrade(progressed, upgrade);
-      if (!result.purchased) return progressed;
-      unlockLimevementId("first_upgrade");
-      if (upgradeId === "tinyLimeIntern" || upgradeId === "limePress") {
-        unlockLimevementId("first_auto");
+    if (limeMode === "multiplayer" && sharedLimeAvailable) {
+      if (peerModeRef.current === "host") {
+        mutateHostSharedLimeRef.current?.((current) => {
+          const { state: progressed } = applyOfflineProgress(current, new Date());
+          const result = purchaseUpgrade(progressed, upgrade);
+          return result.purchased ? { ...result.state, unlocked: true } : progressed;
+        });
+      } else {
+        void peerSessionRef.current?.sendMessage({
+          type: PEER_MESSAGE_TYPES.LIME_BUY_UPGRADE_REQUEST,
+          requestId: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          upgradeId,
+        });
       }
-      if (limeMode === "multiplayer") {
-        unlockLimevementId("multiplayer_upgrade");
-      }
-      return {
-        ...result.state,
-        unlocked: true,
-      };
+      unlockLimevementId("multiplayer_upgrade");
+      return;
+    }
+    const { state: progressed } = applyOfflineProgress(limeStateRef.current, new Date());
+    if (upgrade.type === "unlockClicker" && upgrade.unlocksGameId && loadFruitUnlocked(upgrade.unlocksGameId)) {
+      showSystemToast(`${fruitClickerRegistryById[upgrade.unlocksGameId]?.name || "Fruit"} is already unlocked.`);
+      setLimeState(progressed);
+      return;
+    }
+    const result = purchaseUpgrade(progressed, upgrade);
+    if (!result.purchased) {
+      setLimeState(progressed);
+      return;
+    }
+
+    unlockLimevementId("first_upgrade");
+    if (upgradeId === "tinyLimeIntern" || upgradeId === "limePress") {
+      unlockLimevementId("first_auto");
+    }
+    if (upgrade.type === "unlockClicker" && upgrade.unlocksGameId) {
+      unlockFruitClicker(upgrade.unlocksGameId);
+      setFruitSavesVersion((currentVersion) => currentVersion + 1);
+      showSystemToast(`${fruitClickerRegistryById[upgrade.unlocksGameId]?.name || "Fruit"} unlocked.`);
+    }
+    if (limeMode === "multiplayer") {
+      unlockLimevementId("multiplayer_upgrade");
+    }
+    setLimeState({
+      ...result.state,
+      unlocked: true,
     });
-  }, [limeMode, unlockLimevementId]);
+  }, [limeMode, sharedLimeAvailable, showSystemToast, unlockLimevementId]);
 
   const resetLimeProgress = useCallback(() => {
     const reset = createDefaultLimeState();
@@ -1156,45 +1761,71 @@ export default function App() {
     showSystemToast("Lime progress reset. Productivity has been juiced back to zero.");
   }, [limeState.createdAt, showSystemToast]);
 
+  const replaceLimeStateFromFruitWindow = useCallback((nextState) => {
+    const next = {
+      ...nextState,
+      unlocked: Boolean(nextState?.unlocked || limeUnlocked || limeStateRef.current?.unlocked),
+    };
+    setLimeUnlocked(Boolean(next.unlocked));
+    setLimeState(next);
+    saveLimeState(next);
+    saveLimeUnlocked(Boolean(next.unlocked));
+    setLimeOfflineGains(0);
+    setLimeFruitState(createInitialFruitEventState(new Date()));
+  }, [limeUnlocked]);
+
   const clearActiveLemon = useCallback(() => {
     if (!limeFruitState?.lemon) return;
-    setLimeFruitState((current) => clearLemonEvent(current, new Date()));
+    if (limeMode === "multiplayer" && sharedLimeAvailable && peerModeRef.current !== "host") {
+      void peerSessionRef.current?.sendMessage({
+        type: PEER_MESSAGE_TYPES.LIME_FRUIT_CLEARED,
+        fruitType: "lemon",
+        fruitId: limeFruitState.lemon.id,
+      });
+      showSystemToast("Lemon eviction request sent to host.");
+      return;
+    }
+    const nextFruitState = clearLemonEvent(limeFruitState, new Date());
+    limeFruitStateRef.current = nextFruitState;
+    setLimeFruitState(nextFruitState);
+    if (limeMode === "multiplayer" && sharedLimeAvailable && peerModeRef.current === "host") {
+      broadcastSharedLimeState(sharedLimeStateRef.current, sharedLimeRevisionRef.current);
+    }
     unlockLimevementId("stopped_lemon");
     showSystemToast("Lemon evicted. Citrus theft halted.");
-  }, [limeFruitState?.lemon, showSystemToast, unlockLimevementId]);
+  }, [limeFruitState, limeMode, sharedLimeAvailable, showSystemToast, unlockLimevementId]);
+
+  const clearActiveEggplant = useCallback(() => {
+    if (!limeFruitState?.eggplant) return;
+    if (limeMode === "multiplayer" && sharedLimeAvailable && peerModeRef.current !== "host") {
+      void peerSessionRef.current?.sendMessage({
+        type: PEER_MESSAGE_TYPES.LIME_FRUIT_CLEARED,
+        fruitType: "eggplant",
+        fruitId: limeFruitState.eggplant.id,
+      });
+      showSystemToast("Eggplant eviction request sent to host.");
+      return;
+    }
+
+    const targetState = limeMode === "multiplayer" && sharedLimeAvailable ? sharedLimeStateRef.current : limeStateRef.current;
+    const cleared = clearEggplantEvent(limeFruitState, targetState, new Date());
+    limeFruitStateRef.current = cleared.fruitState;
+    setLimeFruitState(cleared.fruitState);
+
+    if (limeMode === "multiplayer" && sharedLimeAvailable && peerModeRef.current === "host") {
+      sharedLimeStateRef.current = cleared.limeState;
+      setSharedLimeState(cleared.limeState);
+      broadcastSharedLimeState(cleared.limeState, sharedLimeRevisionRef.current);
+    } else if (cleared.limeState) {
+      setLimeState(cleared.limeState);
+    }
+    showSystemToast("Eggplant Jam cleared. Auto-clickers are legally allowed to move again.");
+  }, [limeFruitState, limeMode, sharedLimeAvailable, showSystemToast]);
 
   const refreshLimeMultiplayerSessions = useCallback(() => {
     setLimeMultiplayerSessions(loadLimeMultiplayerSessions());
     setActiveLimeMultiplayerSessionIdState(getActiveLimeMultiplayerSessionId());
   }, []);
-
-  const hostLimeMultiplayerSession = useCallback(() => {
-    const hostName = peerDisplayName || mockAuthSession?.username || "Host";
-    createLimeMultiplayerSession({
-      name: "Lime Session",
-      hostUserId: mockAuthSession?.username || "local-user",
-      hostName,
-      state: limeState,
-    });
-    refreshLimeMultiplayerSessions();
-    setLimeMode("multiplayer");
-    unlockLimevementId("multiplayer_started");
-    showSystemToast("Multiplayer lime session hosted. Host-owned save is now canonical.");
-  }, [limeState, mockAuthSession?.username, peerDisplayName, refreshLimeMultiplayerSessions, showSystemToast, unlockLimevementId]);
-
-  const joinLimeMultiplayerSession = useCallback(() => {
-    if (!activeLimeMultiplayerSessionId && limeMultiplayerSessions[0]) {
-      setActiveLimeMultiplayerSessionId(limeMultiplayerSessions[0].id);
-      setActiveLimeMultiplayerSessionIdState(limeMultiplayerSessions[0].id);
-    }
-    setLimeMode("multiplayer");
-    showSystemToast("Joined multiplayer lime view. Solo stash remains untouched.");
-  }, [activeLimeMultiplayerSessionId, limeMultiplayerSessions, showSystemToast]);
-
-  const disconnectLimeMultiplayerSession = useCallback(() => {
-    setLimeMode("solo");
-    showSystemToast("Switched back to solo lime.");
-  }, [showSystemToast]);
 
   const triggerFakeAd = useCallback(
     (manual = false) => {
@@ -1358,9 +1989,6 @@ export default function App() {
     }
     setEditingId(id);
     setShowForm(true);
-    window.setTimeout(() => {
-      document.getElementById("disaster-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 50);
   }
 
   function closeForm() {
@@ -1408,6 +2036,9 @@ export default function App() {
     const nextDisaster = {
       ...draft,
       id: draft.id || createId(),
+      eventCode: draft.eventCode || existingDisaster?.eventCode || generateEventCode(),
+      createdAt: draft.createdAt || existingDisaster?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       sortOrder:
         !draft.id || yearChanged || !Number.isFinite(Number(draft.sortOrder))
           ? yearPeerCount
@@ -1441,6 +2072,39 @@ export default function App() {
       return false;
     }
 
+    if (isViewingPeerSharedTimeline) {
+      const existingDisaster = draft.id ? displayDisasters.find((disaster) => disaster.id === draft.id) : null;
+      const yearChanged = existingDisaster && normalizeText(existingDisaster.year) !== normalizeText(draft.year);
+      const yearPeerCount = displayDisasters.filter(
+        (disaster) => normalizeText(disaster.year) === normalizeText(draft.year) && disaster.id !== draft.id,
+      ).length;
+      const now = new Date().toISOString();
+      const nextDisaster = {
+        ...existingDisaster,
+        ...draft,
+        id: draft.id || createId(),
+        eventCode: draft.eventCode || existingDisaster?.eventCode || generateEventCode(),
+        createdAt: draft.createdAt || existingDisaster?.createdAt || now,
+        updatedAt: now,
+        sortOrder:
+          !draft.id || yearChanged || !Number.isFinite(Number(draft.sortOrder))
+            ? yearPeerCount
+            : Number(draft.sortOrder),
+      };
+      await peerSessionRef.current?.sendMessage({
+        type: draft.id ? PEER_MESSAGE_TYPES.EVENT_UPDATE_REQUEST : PEER_MESSAGE_TYPES.EVENT_CREATE_REQUEST,
+        timelineCode: peerSharedTimelineSession?.timelineCode || "",
+        eventId: nextDisaster.id,
+        eventCode: nextDisaster.eventCode || "",
+        event: nextDisaster,
+        updatedEvent: nextDisaster,
+        sentByName: peerDisplayName || "Guest",
+      });
+      showSystemToast(draft.id ? "Edit request sent to host." : "New disaster request sent to host.");
+      closeForm();
+      return true;
+    }
+
     const existingDisaster = draft.id ? disasters.find((disaster) => disaster.id === draft.id) : null;
     const yearChanged = existingDisaster && normalizeText(existingDisaster.year) !== normalizeText(draft.year);
     const yearPeerCount = disasters.filter(
@@ -1449,6 +2113,9 @@ export default function App() {
     const nextDisaster = {
       ...draft,
       id: draft.id || createId(),
+      eventCode: draft.eventCode || existingDisaster?.eventCode || generateEventCode(),
+      createdAt: draft.createdAt || existingDisaster?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       sortOrder:
         !draft.id || yearChanged || !Number.isFinite(Number(draft.sortOrder))
           ? yearPeerCount
@@ -1493,6 +2160,16 @@ export default function App() {
       return nextTags;
     });
     markTimelineChange(nextDisaster.id, isNewDisaster ? "created" : "updated", selectedTimelineSource === SOURCE_TYPES.SYNCED_MOCK ? "sync" : "local");
+    if (peerModeRef.current === "host" && peerConnectionStateRef.current === "connected" && shareBindingRef.current?.sharedTimelineId === timelineId) {
+      broadcastTimelineMutation({
+        type: isNewDisaster ? PEER_MESSAGE_TYPES.EVENT_CREATED : PEER_MESSAGE_TYPES.EVENT_UPDATED,
+        event: nextDisaster,
+        updatedEvent: nextDisaster,
+        eventId: nextDisaster.id,
+        eventCode: nextDisaster.eventCode || "",
+        revision: Date.now(),
+      });
+    }
 
     if (isNewDisaster) {
       unlock("first_disaster");
@@ -1524,6 +2201,10 @@ export default function App() {
   async function handleSaveDisaster(draft) {
     if (exampleMode) {
       return performExampleSave(draft);
+    }
+
+    if (isViewingPeerSharedTimeline) {
+      return performSaveDisaster(draft);
     }
 
     if (!captchaVariant && Math.random() < 0.065) {
@@ -1562,6 +2243,22 @@ export default function App() {
       return;
     }
 
+    if (isViewingPeerSharedTimeline) {
+      const deleting = pendingDeleteDisaster;
+      setPendingDeleteId(null);
+      if (editingId === deleting?.id) closeForm();
+      if (detailDisasterId === deleting?.id) setDetailDisasterId(null);
+      void peerSessionRef.current?.sendMessage({
+        type: PEER_MESSAGE_TYPES.EVENT_DELETE_REQUEST,
+        timelineCode: peerSharedTimelineSession?.timelineCode || "",
+        eventId: deleting?.id || "",
+        eventCode: deleting?.eventCode || "",
+        sentByName: peerDisplayName || "Guest",
+      });
+      showSystemToast("Delete request sent to host.");
+      return;
+    }
+
     if (exampleMode) {
       const deletingId = pendingDeleteId;
       markTimelineChange(deletingId, "deleted", "example");
@@ -1576,7 +2273,17 @@ export default function App() {
     }
 
     const deletingId = pendingDeleteId;
+    const deletingEvent = disasters.find((item) => item.id === deletingId);
+    const deletingTimelineId = activeTimelineMetadata?.id || (selectedTimelineSource === SOURCE_TYPES.SYNCED_MOCK ? "mock-real-timeline" : activeLocalTimelineId);
     markTimelineChange(deletingId, "deleted", selectedTimelineSource === SOURCE_TYPES.SYNCED_MOCK ? "sync" : "local");
+    if (peerModeRef.current === "host" && peerConnectionStateRef.current === "connected" && shareBindingRef.current?.sharedTimelineId === deletingTimelineId) {
+      broadcastTimelineMutation({
+        type: PEER_MESSAGE_TYPES.EVENT_DELETED,
+        eventId: deletingId,
+        eventCode: deletingEvent?.eventCode || "",
+        revision: Date.now(),
+      });
+    }
 
     if (editingId === pendingDeleteId) {
       closeForm();
@@ -1788,6 +2495,7 @@ export default function App() {
     }
     setExportNamesFromTimelineName(activeTimelineMetadata?.name || "Local Timeline");
     setExportFileNameEdited(false);
+    setSelectedExportGameSaveIds([]);
     setTimelineManagerOpen(false);
     setExportOptionsOpen(true);
   }
@@ -1819,6 +2527,93 @@ export default function App() {
     }
   }
 
+  function toggleExportGameSave(gameId) {
+    setSelectedExportGameSaveIds((current) =>
+      current.includes(gameId)
+        ? current.filter((id) => id !== gameId)
+        : [...current, gameId],
+    );
+  }
+
+  function selectAllExportGameSaves() {
+    setSelectedExportGameSaveIds(discoveredMiniGames.map((game) => game.id));
+  }
+
+  function clearExportGameSaves() {
+    setSelectedExportGameSaveIds([]);
+  }
+
+  async function exportDiscoveredGameSaves() {
+    const gameIds = discoveredMiniGames.map((game) => game.id);
+    if (!gameIds.length) {
+      showSystemToast("No discovered mini-game saves to export yet.");
+      return;
+    }
+    try {
+      await exportMiniGameSaves(gameIds, "mini-game-saves.uhoh");
+      showSystemToast(`Exported ${gameIds.length} mini-game save${gameIds.length === 1 ? "" : "s"}.`);
+    } catch {
+      showSystemToast("Game save export failed. The fruit economy filed paperwork.");
+    }
+  }
+
+  async function exportSingleGameSave(gameId) {
+    const game = discoveredMiniGames.find((item) => item.id === gameId);
+    if (!game) {
+      showSystemToast("That mini-game has not been discovered here yet.");
+      return;
+    }
+    try {
+      await exportMiniGameSaves([gameId], `${game.id}-save.uhoh`);
+      showSystemToast(`Exported ${game.name} save.`);
+    } catch {
+      showSystemToast(`${game.name} save export failed. The fruit paperwork jammed.`);
+    }
+  }
+
+  function requestImportGameSaves() {
+    setTimelineManagerOpen(false);
+    gameSaveImportFileInputRef.current?.click();
+  }
+
+  async function selectGameSaveImportFile(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      const result = await readMiniGameSavesFromFile(file);
+      const saves = result.saves || [];
+      if (!saves.length) {
+        showSystemToast("No supported mini-game saves were found in that .uhoh package.");
+        return;
+      }
+      setPendingMiniGameSaveImport(result);
+    } catch (error) {
+      showSystemToast(error?.message || "Game save import failed.");
+    }
+  }
+
+  function applyMiniGameSaveImport(optionsByGameId) {
+    if (!pendingMiniGameSaveImport) return;
+    const imported = importMiniGameSaves(pendingMiniGameSaveImport, optionsByGameId);
+    if (imported.imported.includes("lime")) {
+      const nextLimeState = loadLimeState();
+      setLimeUnlocked(true);
+      setLimeState(nextLimeState);
+      setLimevementsState(loadLimevementsState());
+    }
+    if (imported.imported.length) {
+      setFruitSavesVersion((currentVersion) => currentVersion + 1);
+    }
+    setPendingMiniGameSaveImport(null);
+    if (imported.imported.length) {
+      showSystemToast(`Imported game saves: ${imported.imported.join(", ")}.`);
+    } else {
+      showSystemToast("No game saves were imported.");
+    }
+  }
+
   async function runTimelineExport(mode) {
     const isExampleExport = activeSource === SOURCE_TYPES.EXAMPLE;
     const timelineType = isExampleExport ? "example" : activeTimelineMetadata?.type || activeSource;
@@ -1833,13 +2628,16 @@ export default function App() {
     };
     const commonOptions = {
       events: displayDisasters,
-      tags,
-      plannedGames,
+      tags: displayTags,
+      plannedGames: displayPlannedGames,
       knownSecrets: isExampleExport ? [] : knownSecretIds,
       achievements: isExampleExport ? [] : unlockedAchievementIds,
       timeline: exportTimelineMetadata,
       timelineType,
       isExampleExport,
+      miniGameSavesPayload: selectedExportGameSaveIds.length
+        ? buildMiniGameSavePayload(selectedExportGameSaveIds)
+        : null,
     };
 
     setExportBusyMode(mode);
@@ -1852,7 +2650,7 @@ export default function App() {
 
     try {
       if (mode === "legacy") {
-        const legacy = exportLegacyTimelineText(commonOptions);
+        const legacy = exportLegacyTimelineText({ ...commonOptions, miniGameSavesPayload: null });
         downloadUhohFile(legacy.text, exportDownloadName);
         setExportOptionsOpen(false);
         showSystemToast("Legacy text export complete. Photos/videos were not included.");
@@ -1899,7 +2697,11 @@ export default function App() {
           );
         }
       } else {
-        showSystemToast("Modern ZIP export complete. Photos/videos were not included.");
+        showSystemToast(
+          result.miniGameSavesIncluded
+            ? `Modern ZIP export complete with ${result.miniGameSaveCount} game save${result.miniGameSaveCount === 1 ? "" : "s"}.`
+            : "Modern ZIP export complete. Photos/videos were not included.",
+        );
       }
     } catch (error) {
       const message = String(error?.message || "").toLowerCase();
@@ -1940,6 +2742,22 @@ export default function App() {
     globalThis.navigator.clipboard.writeText(text).catch(() => {});
   }
 
+  function getPeerConnectionFailureMessage(debug) {
+    const rawDebug = debug
+      ? `${debug.connectionState}/${debug.iceConnectionState}/${debug.signalingState}/${debug.dataChannelState}`
+      : "unknown";
+
+    if (debug?.connectionState === "failed" || debug?.iceConnectionState === "failed") {
+      return `Connection failed. This usually means the network blocked direct browser-to-browser connection. Try the same Wi-Fi, disable VPN, try Chrome-to-Chrome, or use a hosted HTTPS version. Some networks require a TURN relay. Debug: ${rawDebug}`;
+    }
+
+    if (debug?.dataChannelState === "connecting") {
+      return `Response accepted, but the peer never finished connecting. Use Reset Pairing and generate fresh codes. If it keeps happening, the network probably needs a TURN relay. Debug: ${rawDebug}`;
+    }
+
+    return `Response accepted, but the peer did not verify the connection. Use Reset Pairing and try again. Debug: ${rawDebug}`;
+  }
+
   function openShareTimelineWindow() {
     const fallbackId = activeLocalTimelineId || localTimelineSource.getActiveTimelineId();
     setShareTimelineTargetId((current) => current || fallbackId);
@@ -1970,63 +2788,95 @@ export default function App() {
       return;
     }
 
-    closePeerSession();
-    const session = createHostSession({
-      hostDisplayName: peerDisplayName || mockAuthSession?.username || "Host",
-      sharedTimelineId: timeline.id,
-      sharedTimelineCode: timeline.timelineCode || "",
-      sharedTimelineName: timeline.name || "Local Timeline",
-      getTimelineChecksum: () => buildTimelineChecksumForBinding({
+    try {
+      closePeerSession();
+      setPeerMode("host");
+      setPeerBusyMode("invite");
+      setPeerAnswerAccepted(false);
+      setPeerDebugState(null);
+      peerAnswerAppliedRef.current = false;
+      const generationStartedAt = Date.now();
+      setPeerStatusMessage("Preparing peer connection...");
+      setPeerConnectionState("connecting");
+
+      const session = createHostSession({
+        hostDisplayName: peerDisplayName || mockAuthSession?.username || "Host",
         sharedTimelineId: timeline.id,
         sharedTimelineCode: timeline.timelineCode || "",
-      }),
-    });
+        sharedTimelineName: timeline.name || "Local Timeline",
+        getTimelineChecksum: () => buildTimelineChecksumForBinding({
+          sharedTimelineId: timeline.id,
+          sharedTimelineCode: timeline.timelineCode || "",
+        }),
+      });
 
-    attachPeerSessionListeners(session);
-    peerSessionRef.current = session;
+      attachPeerSessionListeners(session);
+      peerSessionRef.current = session;
 
-    const cryptoSalt = await session.setSecurityPassphrase(passphrase, generateSalt());
-    const offer = await session.createOffer();
-    const invitePayload = {
-      version: 1,
-      kind: "offer",
-      sessionId: session.sessionId,
-      hostDisplayName: peerDisplayName || "Host",
-      sharedTimelineId: timeline.id,
-      sharedTimelineCode: timeline.timelineCode || "",
-      sharedTimelineName: timeline.name || "Local Timeline",
-      cryptoSalt,
-      sessionDescription: offer,
-    };
-    const code = encodePeerCode(invitePayload);
-    setPeerMode("host");
-    setPeerInviteCode(code);
-    setPeerAnswerCode("");
-    setPeerStatusMessage("Invite code ready. Waiting for guest answer...");
-    setShareBinding({
-      sessionId: session.sessionId,
-      sharedTimelineId: timeline.id,
-      sharedTimelineCode: timeline.timelineCode || "",
-      sharedTimelineName: timeline.name || "Local Timeline",
-      hostDisplayName: peerDisplayName || "Host",
-      createdAt: new Date().toISOString(),
-      status: "waiting",
-    });
+      const cryptoSalt = await session.setSecurityPassphrase(passphrase, generateSalt());
+      setPeerStatusMessage("Gathering connection info...");
+      const offer = await session.createOffer();
+      const debug = session.getDebugState?.();
+      const invitePayload = {
+        version: 1,
+        kind: "offer",
+        sessionId: session.sessionId,
+        hostDisplayName: peerDisplayName || "Host",
+        sharedTimelineId: timeline.id,
+        sharedTimelineCode: timeline.timelineCode || "",
+        sharedTimelineName: timeline.name || "Local Timeline",
+        cryptoSalt,
+        sessionDescription: offer,
+      };
+      const code = encodePeerCode(invitePayload);
+      setPeerInviteCode(code);
+      setPeerAnswerCode("");
+      setPeerConnectionState("disconnected");
+      setPeerBusyMode("");
+      setPeerDebugState(debug || null);
+      const elapsedMs = Date.now() - generationStartedAt;
+      const warning = debug?.iceWarning ? ` ${debug.iceWarning}` : "";
+      setPeerStatusMessage(`Invite ready in ${elapsedMs}ms. Send it to your friend, then paste their response and click Connect.${warning}`);
+      setShareBinding({
+        sessionId: session.sessionId,
+        sharedTimelineId: timeline.id,
+        sharedTimelineCode: timeline.timelineCode || "",
+        sharedTimelineName: timeline.name || "Local Timeline",
+        hostDisplayName: peerDisplayName || "Host",
+        createdAt: new Date().toISOString(),
+        status: "waiting",
+      });
+    } catch (error) {
+      closePeerSession();
+      setPeerBusyMode("");
+      setPeerAnswerAccepted(false);
+      setPeerStatusMessage(`Could not start peer sync: ${error?.message || "unknown error"}`);
+    }
   }
 
   async function applyPeerAnswerCode() {
     if (!peerSessionRef.current) {
-      setPeerStatusMessage("Start host session before applying an answer code.");
+      setPeerStatusMessage("Start host session before applying a response code.");
+      return;
+    }
+    if (peerAnswerAccepted || peerAnswerAppliedRef.current) {
+      setPeerStatusMessage("Response already accepted. Waiting for connection. Use Reset Pairing before trying another response code.");
       return;
     }
     try {
       const decoded = decodePeerCode(peerAnswerCode);
       const validity = validatePeerCode(decoded);
       if (!validity.valid || decoded.kind !== "answer") {
-        setPeerStatusMessage("Invalid answer code.");
+        setPeerStatusMessage("Invalid response code.");
         return;
       }
-      await peerSessionRef.current.acceptAnswer(decoded.sessionDescription);
+      setPeerBusyMode("connect");
+      setPeerStatusMessage("Applying response and connecting...");
+      setPeerConnectionState("connecting");
+      peerAnswerAppliedRef.current = true;
+      const connectStartedAt = Date.now();
+      const applied = await peerSessionRef.current.acceptAnswer(decoded.sessionDescription);
+      setPeerAnswerAccepted(true);
       if (decoded.guestId || decoded.guestDisplayName) {
         upsertPeerGuest({
           guestId: decoded.guestId || `guest-${Date.now()}`,
@@ -2037,9 +2887,30 @@ export default function App() {
           permissions: clonePeerPermissions(defaultPeerPermissions),
         });
       }
-      setPeerStatusMessage("Answer accepted. Waiting for data channel...");
-    } catch {
-      setPeerStatusMessage("Could not decode answer code.");
+      setPeerStatusMessage(applied === false ? "Response already accepted. Waiting for connection..." : "Response accepted. Verifying connection...");
+      const connected = await peerSessionRef.current.waitForVerifiedConnection?.(15000);
+      if (connected) {
+        setPeerBusyMode("");
+        setPeerConnectionState("connected");
+        setPeerDebugState(peerSessionRef.current.getDebugState?.() || null);
+        setPeerStatusMessage(`Connected in ${Date.now() - connectStartedAt}ms.`);
+      } else {
+        const debug = peerSessionRef.current.getDebugState?.();
+        setPeerBusyMode("");
+        setPeerConnectionState("failed");
+        setPeerDebugState(debug || null);
+        setPeerStatusMessage(getPeerConnectionFailureMessage(debug));
+      }
+    } catch (error) {
+      const debug = peerSessionRef.current?.getDebugState?.();
+      if (!debug?.answerApplied && !debug?.hasRemoteDescription) {
+        peerAnswerAppliedRef.current = false;
+        setPeerAnswerAccepted(false);
+      }
+      setPeerBusyMode("");
+      setPeerConnectionState("failed");
+      setPeerDebugState(debug || null);
+      setPeerStatusMessage(`Could not connect with that response code: ${error?.message || "bad code"}`);
     }
   }
 
@@ -2051,25 +2922,35 @@ export default function App() {
     }
 
     try {
+      setPeerBusyMode("answer");
+      setPeerDebugState(null);
+      const generationStartedAt = Date.now();
+      setPeerStatusMessage("Reading invite code...");
       const decoded = decodePeerCode(peerInviteCode);
       const validity = validatePeerCode(decoded);
       if (!validity.valid || decoded.kind !== "offer") {
+        setPeerBusyMode("");
         setPeerStatusMessage("Invalid invite code.");
         return;
       }
 
       closePeerSession();
+      setPeerBusyMode("answer");
       const session = createJoinSession({
         guestDisplayName: peerDisplayName || "Guest",
         hostDisplayName: decoded.hostDisplayName || "Host",
         sharedTimelineId: decoded.sharedTimelineId || "",
         sharedTimelineCode: decoded.sharedTimelineCode || "",
         sharedTimelineName: decoded.sharedTimelineName || "Shared Timeline",
+        sessionId: decoded.sessionId || undefined,
       });
       attachPeerSessionListeners(session);
       peerSessionRef.current = session;
       await session.setSecurityPassphrase(passphrase, decoded.cryptoSalt || "");
+      setPeerConnectionState("connecting");
+      setPeerStatusMessage("Gathering connection info...");
       const answer = await session.acceptOfferAndCreateAnswer(decoded.sessionDescription);
+      const debug = session.getDebugState?.();
 
       const answerPayload = {
         version: 1,
@@ -2081,7 +2962,10 @@ export default function App() {
       };
       setPeerMode("join");
       setPeerAnswerCode(encodePeerCode(answerPayload));
-      setPeerStatusMessage("Answer code ready. Send it back to the host.");
+      setPeerBusyMode("");
+      setPeerDebugState(debug || null);
+      const warning = debug?.iceWarning ? ` ${debug.iceWarning}` : "";
+      setPeerStatusMessage(`Response ready in ${Date.now() - generationStartedAt}ms. Send it back to the host, then wait for them to click Connect.${warning}`);
       setShareBinding({
         sessionId: decoded.sessionId || session.sessionId,
         sharedTimelineId: decoded.sharedTimelineId || "",
@@ -2097,8 +2981,11 @@ export default function App() {
         oldName: "",
         newName: answerPayload.guestDisplayName,
       });
-    } catch {
-      setPeerStatusMessage("Could not decode invite code.");
+    } catch (error) {
+      setPeerConnectionState("failed");
+      setPeerBusyMode("");
+      setPeerDebugState(peerSessionRef.current?.getDebugState?.() || null);
+      setPeerStatusMessage(`Could not use that invite code: ${error?.message || "bad code"}`);
     }
   }
 
@@ -2129,6 +3016,8 @@ export default function App() {
     setPeerInviteCode("");
     setPeerAnswerCode("");
     setPeerGuests([]);
+    setPeerBusyMode("");
+    setPeerAnswerAccepted(false);
     setPeerStatusMessage("Disconnected");
   }
 
@@ -2141,6 +3030,34 @@ export default function App() {
       guestId,
       permissions,
     });
+  }
+
+  async function kickPeerGuest(guestId) {
+    const guest = peerGuests.find((item) => item.guestId === guestId);
+    const guestName = guest?.displayName || "Guest";
+    const confirmed = window.confirm(`Kick ${guestName} from this shared timeline?`);
+    if (!confirmed) return;
+
+    await peerSessionRef.current?.sendMessage({
+      type: PEER_MESSAGE_TYPES.PEER_KICKED,
+      guestId,
+      reason: "host_kicked",
+    });
+
+    setPeerGuests((current) => current.filter((item) => item.guestId !== guestId));
+    showSystemToast(`${guestName} was kicked from the shared timeline.`);
+
+    // Current peer sync is one guest per manual connection. Kicking the guest closes
+    // this live channel so the guest stops receiving updates immediately.
+    closePeerSession();
+    setShareBinding(null);
+    setPeerInviteCode("");
+    setPeerAnswerCode("");
+    setPeerGuests([]);
+    setPeerBusyMode("");
+    setPeerAnswerAccepted(false);
+    peerAnswerAppliedRef.current = false;
+    setPeerStatusMessage("Guest removed. Start over to pair again.");
   }
 
   function forgetPersistentSession(sessionId) {
@@ -2480,6 +3397,8 @@ export default function App() {
     setExampleLoadState({ phase: "idle", message: "" });
     setExampleSourceLabel("");
     setExampleFallbackNotice("");
+    clearAllFruitClickerData();
+    setFruitSavesVersion((currentVersion) => currentVersion + 1);
     setLimeUnlocked(false);
     const resetLime = createDefaultLimeState();
     setLimeState(resetLime);
@@ -2534,7 +3453,7 @@ export default function App() {
           />
           <GamesPanel
             gameStats={gameStats}
-            plannedGames={plannedGames}
+            plannedGames={displayPlannedGames}
             onAddPlannedGame={addPlannedGame}
             onRemovePlannedGame={removePlannedGame}
           />
@@ -2577,12 +3496,21 @@ export default function App() {
           />
         ) : null}
 
+        {isViewingPeerSharedTimeline ? (
+          <section className="rounded-3xl border border-emerald-300/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-50 shadow-xl shadow-black/20 backdrop-blur">
+            <p className="font-black">Viewing shared timeline from {peerSharedTimelineSession.hostName || "Host"}</p>
+            <p className="mt-1 text-xs text-emerald-100/85">
+              This is a live session view. Your local timelines are untouched unless you explicitly save a copy later.
+            </p>
+          </section>
+        ) : null}
+
         <AnimatePresence>
-          {showForm ? (
+          {showForm && !editingDisaster ? (
             <DisasterForm
               disasters={displayDisasters}
               games={games}
-              tags={tags}
+              tags={displayTags}
               editingDisaster={editingDisaster}
               onSave={handleSaveDisaster}
               onDelete={requestDeleteDisaster}
@@ -2627,6 +3555,28 @@ export default function App() {
             <span className="sr-only">This website&apos;s code is sadly made by AI.</span>
       </footer>
 
+      <AnimatePresence>
+        {showForm && editingDisaster ? (
+          <FloatingWindow
+            title="Edit Disaster"
+            subtitle="Editing here will not drag you back to the top of the page."
+            onClose={closeForm}
+            widthClass="max-w-5xl"
+            zIndexClass="z-[62]"
+            bodyClassName="bg-zinc-950 p-4 md:p-5"
+          >
+            <DisasterForm
+              disasters={displayDisasters}
+              games={games}
+              tags={displayTags}
+              editingDisaster={editingDisaster}
+              onSave={handleSaveDisaster}
+              onDelete={requestDeleteDisaster}
+              onClose={closeForm}
+            />
+          </FloatingWindow>
+        ) : null}
+      </AnimatePresence>
       <AnimatePresence>
         {nodeWebOpen ? (
           <NodeWebModal
@@ -2710,6 +3660,10 @@ export default function App() {
             onDeleteLocalTimeline={deleteLocalTimeline}
             onOpenExport={openExportOptions}
             onOpenImport={requestImportTimeline}
+            onExportMiniGameSaves={exportDiscoveredGameSaves}
+            onExportMiniGameSave={exportSingleGameSave}
+            onImportMiniGameSaves={requestImportGameSaves}
+            discoveredMiniGames={discoveredMiniGames}
             onOpenShareTimeline={openShareTimelineWindow}
             onEnterExampleMode={enterExampleMode}
             onExitExampleMode={exitExampleMode}
@@ -2740,6 +3694,8 @@ export default function App() {
               answerCode: peerAnswerCode,
               statusMessage: peerStatusMessage,
               waitingForAnswer: peerConnectionState !== "connected",
+              busyMode: peerBusyMode,
+              answerAccepted: peerAnswerAccepted,
               onDisplayNameChange: setPeerDisplayName,
               onPassphraseChange: setPeerPassphrase,
               onInviteCodeChange: setPeerInviteCode,
@@ -2753,17 +3709,16 @@ export default function App() {
             }}
             guests={peerGuests}
             onUpdateGuestPermissions={updateGuestPermissions}
+            onKickGuest={kickPeerGuest}
             persistentSessions={persistentPeerSessions}
             onForgetPersistentSession={forgetPersistentSession}
             onViewCachedSession={() => showSystemToast("Cached session view scaffolded. Full cached reader TODO.")}
-            onTryReconnectSession={() => showSystemToast("Reconnect scaffolded. Paste latest invite/answer codes to reconnect.")}
+            onTryReconnectSession={() => showSystemToast("Reconnect scaffolded. Paste latest invite/response codes to reconnect.")}
             onSaveSessionAsLocalCopy={() => showSystemToast("Save-as-local-copy scaffolded. Local copy materializer TODO.")}
-            chatMessages={peerChatMessages}
-            chatDraft={peerChatDraft}
-            onChatDraftChange={setPeerChatDraft}
-            onSendChatMessage={sendPeerChatMessage}
             peerMode={peerMode}
             onPeerModeChange={setPeerMode}
+            debugState={peerDebugState}
+            adminMode={adminMode}
           />
         ) : null}
       </AnimatePresence>
@@ -2783,10 +3738,16 @@ export default function App() {
             onExportDataOnly={exportTimelineDataOnly}
             onExportWithMedia={exportTimelineWithMedia}
             onExportLegacy={exportTimelineLegacy}
+            discoveredMiniGames={discoveredMiniGames}
+            selectedMiniGameSaveIds={selectedExportGameSaveIds}
+            onToggleMiniGameSave={toggleExportGameSave}
+            onSelectAllMiniGameSaves={selectAllExportGameSaves}
+            onClearMiniGameSaves={clearExportGameSaves}
             onCancel={() => {
               if (exportBusyMode) return;
               setExportOptionsOpen(false);
               setExportFileNameEdited(false);
+              setSelectedExportGameSaveIds([]);
               resetExportProgress();
             }}
           />
@@ -2843,34 +3804,57 @@ export default function App() {
       </AnimatePresence>
       <AnimatePresence>
         {toastAchievement ? (
-          <AchievementToast achievement={toastAchievement} onClose={() => setToastAchievement(null)} />
+          <AchievementToast
+            key={toastAchievement.id}
+            achievement={toastAchievement}
+            onClose={() => setToastAchievement(null)}
+          />
         ) : null}
       </AnimatePresence>
       <AnimatePresence>{systemToast ? <TimelineToast message={systemToast} /> : null}</AnimatePresence>
+      <LimeFruitOverlay
+        fruitState={(limeUnlocked || limeState.unlocked || sharedLimeAvailable) ? limeFruitState : null}
+        limeCount={activeLimeGameState?.limeCount || 0}
+        onClearLemon={clearActiveLemon}
+        onClearEggplant={clearActiveEggplant}
+      />
       <AnimatePresence>
         {limeWindowOpen ? (
           <LimeClickerWindow
-            state={limeState}
+            state={activeLimeGameState}
             limesPerClick={limePerClick}
             limesPerSecond={limePerSecond}
             saveStatus={limeSaveStatus}
             offlineGains={limeOfflineGains}
             onClickLime={onClickLime}
             onPurchaseUpgrade={onPurchaseLimeUpgrade}
+            onReplaceLimeState={replaceLimeStateFromFruitWindow}
             onReset={resetLimeProgress}
             limeMode={limeMode}
             onSetLimeMode={setLimeMode}
-            onHostMultiplayer={hostLimeMultiplayerSession}
-            onJoinMultiplayer={joinLimeMultiplayerSession}
-            onDisconnectMultiplayer={disconnectLimeMultiplayerSession}
-            multiplayerSessionName={activeLimeMultiplayerSession?.name || ""}
-            multiplayerPeersCount={activeLimeMultiplayerSession?.peers?.length || 0}
-            multiplayerSyncStatus={limeMode === "multiplayer" ? "Peer Lime requires the host tab to stay open. No host, no shared citrus." : "No multiplayer session active."}
-            fruitState={limeFruitState}
-            onClearLemon={clearActiveLemon}
+            sharedLimeAvailable={sharedLimeAvailable}
+            multiplayerSessionName={activeLimeMultiplayerSession?.name || "Shared Lime"}
+            multiplayerPeersCount={peerMode === "host" ? peerGuests.length : isPeerConnected ? 1 : 0}
+            multiplayerSyncStatus={
+              sharedLimeAvailable
+                ? peerMode === "host"
+                  ? "Host-owned Shared Lime is live. Guests send requests; this browser is the citrus truth."
+                  : "Viewing host-owned Shared Lime. Your solo stash is safe."
+                : "Connect to a peer to share lime."
+            }
             limevementsState={limevementsState}
             limevementsOpen={limevementsOpen}
             onToggleLimevements={() => setLimevementsOpen((current) => !current)}
+            peerConnected={isPeerConnected}
+            chatOpen={peerLiveChatOpen}
+            onToggleChat={() => setPeerLiveChatOpen((current) => !current)}
+            chatMessages={peerChatMessages}
+            chatDraft={peerChatDraft}
+            onChatDraftChange={setPeerChatDraft}
+            onSendChatMessage={sendPeerChatMessage}
+            fruitStateRefreshKey={fruitSavesVersion}
+            onFruitSavesChanged={() => setFruitSavesVersion((currentVersion) => currentVersion + 1)}
+            onNotice={showSystemToast}
             onClose={() => setLimeWindowOpen(false)}
           />
         ) : null}
@@ -2881,6 +3865,15 @@ export default function App() {
             disaster={pendingDeleteDisaster}
             onCancel={() => setPendingDeleteId(null)}
             onConfirm={confirmDeleteDisaster}
+          />
+        ) : null}
+      </AnimatePresence>
+      <AnimatePresence>
+        {pendingMiniGameSaveImport ? (
+          <MiniGameSaveImportWindow
+            importResult={pendingMiniGameSaveImport}
+            onApply={applyMiniGameSaveImport}
+            onCancel={() => setPendingMiniGameSaveImport(null)}
           />
         ) : null}
       </AnimatePresence>
@@ -2906,6 +3899,13 @@ export default function App() {
         accept=".uhoh,.json,text/plain,application/json,application/zip,application/octet-stream"
         className="sr-only"
         onChange={selectImportFile}
+      />
+      <input
+        ref={gameSaveImportFileInputRef}
+        type="file"
+        accept=".uhoh,application/zip,application/octet-stream"
+        className="sr-only"
+        onChange={selectGameSaveImportFile}
       />
       <ChaosOrb
         active={orb.active}

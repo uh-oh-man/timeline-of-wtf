@@ -7,6 +7,7 @@ import {
 } from "../constants/appIdentity";
 import { stripSessionOnlyMediaFields } from "../services/media/mediaPersistence";
 import { getMediaBlob, saveMediaFile } from "../services/media/mediaStore";
+import { MINI_GAME_SAVES_PATH } from "../services/miniGames/miniGameSaveExport";
 import { createId, uniqueByName } from "./helpers";
 import { normalizeHexColor } from "./colorUtils";
 import {
@@ -199,6 +200,8 @@ function buildImportSummary({
   totalMediaBytes,
   warnings,
   appIdentity,
+  miniGameSavesPayload = null,
+  manifest = null,
 }) {
   const timelineType = payload.timelineType || payload.timeline?.type || "local";
   const timelineName = payload.timeline?.name || "Imported Timeline";
@@ -234,6 +237,14 @@ function buildImportSummary({
     eventCount: normalizedEvents.length,
     tagCount: rawData.tags.length,
     plannedGameCount: rawData.plannedGames.length,
+    miniGameSaveCount: Array.isArray(miniGameSavesPayload?.saves)
+      ? miniGameSavesPayload.saves.length
+      : Number(manifest?.content?.miniGameSaveCount || 0),
+    includedMiniGames: Array.isArray(miniGameSavesPayload?.saves)
+      ? miniGameSavesPayload.saves.map((save) => save.gameId).filter(Boolean)
+      : Array.isArray(manifest?.content?.includedMiniGames)
+        ? manifest.content.includedMiniGames
+        : [],
     warningCount: warnings.length,
   };
 }
@@ -245,6 +256,8 @@ function normalizeImportedPayload(payload, {
   totalMediaBytes = 0,
   appIdentity = APP_IDENTITY,
   warnings = [],
+  miniGameSavesPayload = null,
+  manifest = null,
 } = {}) {
   const rawData = getRawImportData(payload);
   const normalizedEvents = rawData.events.map((event, index) =>
@@ -281,6 +294,8 @@ function normalizeImportedPayload(payload, {
       totalMediaBytes,
       warnings: normalizedWarnings,
       appIdentity,
+      miniGameSavesPayload,
+      manifest,
     }),
   };
 }
@@ -463,6 +478,7 @@ export function buildTimelineExportPayload({
   createdAt = new Date().toISOString(),
   mediaIncluded = false,
   packageId = generatePackageId(),
+  miniGameSavesPayload = null,
 } = {}) {
   const safeTimeline = timeline && typeof timeline === "object"
     ? cloneJson(timeline)
@@ -499,6 +515,7 @@ export function buildTimelineExportPayload({
       packageId,
       exportedAt: createdAt,
     },
+    ...(miniGameSavesPayload ? { miniGameSaves: { included: true, count: asArray(miniGameSavesPayload.saves).length } } : {}),
     data: {
       events: events.map(normalizeEventForExport),
       tags: cloneJson(tags) || [],
@@ -524,6 +541,7 @@ export async function exportTimelineZip({
   isExampleExport = false,
   includeMedia = false,
   onProgress,
+  miniGameSavesPayload = null,
 } = {}) {
   const createdAt = new Date().toISOString();
   const packageId = generatePackageId();
@@ -546,7 +564,11 @@ export async function exportTimelineZip({
     createdAt,
     mediaIncluded: includeMedia && mediaCollection.mediaCount > 0,
     packageId,
+    miniGameSavesPayload,
   });
+  const miniGameSaves = miniGameSavesPayload && asArray(miniGameSavesPayload.saves).length > 0
+    ? miniGameSavesPayload
+    : null;
 
   const manifest = buildPackageManifest({
     createdAt,
@@ -555,10 +577,20 @@ export async function exportTimelineZip({
     mediaCount: mediaCollection.mediaCount,
     totalMediaBytes: mediaCollection.totalMediaBytes,
     timelineCount: 1,
+    miniGameSaveCount: miniGameSaves ? asArray(miniGameSaves.saves).length : 0,
+    includedMiniGames: miniGameSaves ? asArray(miniGameSaves.saves).map((save) => save.gameId).filter(Boolean) : [],
   });
 
   const { blob } = await createUhohPackage(payload, mediaCollection.mediaEntries, {
     manifest,
+    extraJsonFiles: miniGameSaves
+      ? [
+          {
+            path: MINI_GAME_SAVES_PATH,
+            data: miniGameSaves,
+          },
+        ]
+      : [],
     onUpdate: onProgress
       ? (metadata) => {
           onProgress({
@@ -578,6 +610,8 @@ export async function exportTimelineZip({
     mediaCount: mediaCollection.mediaCount,
     totalMediaBytes: mediaCollection.totalMediaBytes,
     mediaIncluded: includeMedia && mediaCollection.mediaCount > 0,
+    miniGameSavesIncluded: Boolean(miniGameSaves),
+    miniGameSaveCount: miniGameSaves ? asArray(miniGameSaves.saves).length : 0,
   };
 }
 
@@ -677,12 +711,15 @@ export async function importTimelineFile(file) {
         totalMediaBytes: Number(packageData.manifest?.content?.totalMediaBytes || 0),
         appIdentity: timelineDataWithPackageRef?.app || packageData.manifest?.app || APP_IDENTITY,
         warnings,
+        miniGameSavesPayload: packageData.miniGameSaves,
+        manifest: packageData.manifest,
       });
 
       return {
         ...normalized,
         format: "modern-zip",
         manifest: packageData.manifest,
+        miniGameSaves: packageData.miniGameSaves,
         file,
       };
     }
