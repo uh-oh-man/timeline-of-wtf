@@ -1,6 +1,7 @@
 import { AlertTriangle, ArchiveRestore, FileArchive, Merge, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import FloatingWindow from "./FloatingWindow";
+import { miniGameRegistryById } from "../data/miniGameRegistry";
 import { formatFileSize } from "../utils/mediaUtils";
 import { uniqueByName } from "../utils/helpers";
 
@@ -27,6 +28,32 @@ function ensureUniqueTimelineName(baseName, existingNames = []) {
   return candidate;
 }
 
+function getMiniGameLocalStatus(gameId) {
+  const game = miniGameRegistryById[gameId];
+  if (!game || typeof window === "undefined") return { discovered: false, hasSave: false };
+  const rawSave = window.localStorage.getItem(game.saveKey);
+  let parsedSave = null;
+  try {
+    parsedSave = rawSave ? JSON.parse(rawSave) : null;
+  } catch {
+    parsedSave = null;
+  }
+  return {
+    discovered: window.localStorage.getItem(game.discoveredKey) === "true" || Boolean(parsedSave?.unlocked),
+    hasSave: Boolean(rawSave),
+  };
+}
+
+function summarizeMiniGameSave(save) {
+  const state = save?.state || {};
+  const count = state.limeCount ?? state.appleCount ?? state.blueberryCount ?? state.charrieCount ?? state.count;
+  const bits = [];
+  if (Number.isFinite(Number(count))) bits.push(`count ${Number(count).toLocaleString()}`);
+  if (Number.isFinite(Number(state.totalClicks))) bits.push(`${Number(state.totalClicks).toLocaleString()} clicks`);
+  if (Number.isFinite(Number(state.ascensionLevel))) bits.push(`ascension ${Number(state.ascensionLevel)}`);
+  return bits.length ? bits.join(" | ") : "stats unavailable";
+}
+
 export default function ImportPreviewWindow({
   importResult,
   currentTimelineName = "Local Timeline",
@@ -46,6 +73,7 @@ export default function ImportPreviewWindow({
   const [customReplaceName, setCustomReplaceName] = useState("");
   const summary = importResult?.summary || {};
   const warnings = importResult?.warnings || [];
+  const miniGameSaves = importResult?.miniGameSaves?.saves || [];
   const hasValidImport = Boolean(importResult?.valid && importResult?.summary);
   const formatLabel = summary.format === "modern-zip" ? "Modern ZIP .uhoh" : "Legacy Text .uhoh";
   const hasMatchingTimelineByCode = Boolean(matchingTimeline?.id && summary.timelineCode);
@@ -161,6 +189,43 @@ export default function ImportPreviewWindow({
             Included: {summary.mediaIncluded ? "yes" : "no"} | Count: {summary.mediaCount} | Size: {formatFileSize(summary.totalMediaBytes)}
           </p>
         </section>
+
+        {Number(summary.miniGameSaveCount || 0) > 0 ? (
+          <section className="rounded-3xl border border-lime-300/25 bg-lime-500/10 p-4">
+            <p className="text-sm font-black uppercase tracking-widest text-lime-100">Game Saves Included</p>
+            <p className="mt-2 text-sm leading-6 text-zinc-100">
+              This package contains {summary.miniGameSaveCount} mini-game save{summary.miniGameSaveCount === 1 ? "" : "s"}.
+            </p>
+            {miniGameSaves.length ? (
+              <div className="mt-3 grid gap-2">
+                {miniGameSaves.map((save) => {
+                  const localStatus = getMiniGameLocalStatus(save.gameId);
+                  return (
+                    <article key={save.gameId} className="rounded-2xl border border-white/12 bg-zinc-950/55 p-3">
+                      <p className="text-sm font-black text-white">{save.gameName || save.gameId}</p>
+                      <p className="mt-1 text-xs text-zinc-300">
+                        Exported: {save.exportedAt || "unknown"} | Local discovery: {localStatus.discovered ? "yes" : "no"} | Local save: {localStatus.hasSave ? "yes" : "no"}
+                      </p>
+                      <p className="mt-1 text-xs text-zinc-400">{summarizeMiniGameSave(save)}</p>
+                      {!localStatus.discovered ? (
+                        <p className="mt-2 text-xs font-bold text-amber-100">
+                          Importing this save through Import Game Save will unlock {save.gameName || save.gameId} on this browser.
+                        </p>
+                      ) : null}
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="mt-1 text-sm leading-6 text-zinc-200">
+                Games: {summary.includedMiniGames?.length ? summary.includedMiniGames.join(", ") : "unknown"}
+              </p>
+            )}
+            <p className="mt-3 text-xs leading-5 text-zinc-400">
+              Timeline import will not silently overwrite these saves. Use Import Game Save from Timeline Manager for Skip / Merge / Replace choices.
+            </p>
+          </section>
+        ) : null}
 
         {warnings.length ? (
           <section className="rounded-3xl border border-yellow-200/25 bg-yellow-300/10 p-4">

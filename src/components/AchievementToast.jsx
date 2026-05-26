@@ -7,10 +7,11 @@ export default function AchievementToast({ achievement, onClose }) {
   const [exitDirection, setExitDirection] = useState(1);
 
   useEffect(() => {
+    if (!achievement) return undefined;
     if (isDragging) return undefined;
-    const timer = window.setTimeout(onClose, 4200);
+    const timer = window.setTimeout(() => onClose?.(), 5200);
     return () => window.clearTimeout(timer);
-  }, [isDragging, onClose]);
+  }, [achievement, isDragging, onClose]);
 
   if (!achievement) return null;
 
@@ -25,11 +26,13 @@ export default function AchievementToast({ achievement, onClose }) {
       dragConstraints={{ left: 0, right: 0 }}
       dragElastic={0.22}
       onDragStart={() => setIsDragging(true)}
+      onPointerCancel={() => setIsDragging(false)}
+      onPointerUp={() => setIsDragging(false)}
       onDragEnd={(_, info) => {
         setIsDragging(false);
         if (Math.abs(info.offset.x) > 100) {
           setExitDirection(info.offset.x < 0 ? -1 : 1);
-          onClose();
+          onClose?.();
         }
       }}
     >

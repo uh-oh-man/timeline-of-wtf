@@ -29,6 +29,11 @@ export default function ExportOptionsWindow({
   onExportDataOnly,
   onExportWithMedia,
   onExportLegacy,
+  discoveredMiniGames = [],
+  selectedMiniGameSaveIds = [],
+  onToggleMiniGameSave,
+  onSelectAllMiniGameSaves,
+  onClearMiniGameSaves,
   onCancel,
 }) {
   const mediaCount = Number(summary?.mediaCount || 0);
@@ -107,6 +112,64 @@ export default function ExportOptionsWindow({
             </div>
           </div>
         </section>
+
+        {discoveredMiniGames.length ? (
+          <section className="rounded-3xl border border-lime-300/20 bg-lime-500/10 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-lime-100">Include Game Saves</p>
+                <p className="mt-1 text-sm leading-6 text-zinc-200">
+                  Optional. Timeline backups do not include fruit economies unless you say so.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={onSelectAllMiniGameSaves}
+                  disabled={Boolean(busyMode)}
+                  className="rounded-xl border border-lime-300/25 bg-lime-500/10 px-3 py-2 text-xs font-black text-lime-100 transition hover:bg-lime-500/20 disabled:opacity-60"
+                >
+                  Include All
+                </button>
+                <button
+                  type="button"
+                  onClick={onClearMiniGameSaves}
+                  disabled={Boolean(busyMode)}
+                  className="rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-xs font-black text-zinc-100 transition hover:bg-zinc-800 disabled:opacity-60"
+                >
+                  Include None
+                </button>
+              </div>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {discoveredMiniGames.map((game) => {
+                const checked = selectedMiniGameSaveIds.includes(game.id);
+                return (
+                  <label
+                    key={game.id}
+                    className={`flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-2xl border px-3 py-2 text-sm transition ${
+                      checked
+                        ? "border-lime-300/35 bg-lime-500/15 text-lime-50"
+                        : "border-white/10 bg-zinc-900/70 text-zinc-200 hover:bg-zinc-800"
+                    }`}
+                  >
+                    <span>
+                      <span className="block font-black">{game.name} save</span>
+                      <span className="text-xs text-zinc-400">Stored separately from timeline events.</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={Boolean(busyMode)}
+                      onChange={() => onToggleMiniGameSave?.(game.id)}
+                      className="h-5 w-5 accent-lime-300"
+                    />
+                  </label>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
 
         {sizeWarning ? (
           <section className={`rounded-3xl border p-4 ${sizeDanger ? "border-red-300/35 bg-red-500/12" : "border-yellow-200/25 bg-yellow-300/10"}`}>

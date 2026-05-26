@@ -24,6 +24,7 @@ export const defaultPeerPermissions = {
     canViewLimeProgress: true,
     canClickLime: true,
     canBuyLimeUpgrades: true,
+    canAscendFruit: true,
     canSaveLimeCopy: true,
   },
 };
@@ -166,28 +167,33 @@ export const peerPermissionGroups = [
   },
   {
     id: "lime",
-    title: "Lime",
-    description: "Controls multiplayer lime interactions.",
+    title: "Fruit Clickers",
+    description: "Controls multiplayer fruit-clicker interactions.",
     items: [
       {
         key: "canViewLimeProgress",
-        label: "View lime progress",
-        description: "Allows this guest to view shared lime state.",
+        label: "View fruit progress",
+        description: "Allows this guest to view shared fruit-clicker state.",
       },
       {
         key: "canClickLime",
-        label: "Click lime",
-        description: "Allows sending lime click requests.",
+        label: "Click fruit",
+        description: "Allows sending click requests.",
       },
       {
         key: "canBuyLimeUpgrades",
         label: "Buy upgrades",
-        description: "Allows sending lime upgrade purchase requests.",
+        description: "Allows sending upgrade purchase requests.",
+      },
+      {
+        key: "canAscendFruit",
+        label: "Ascend fruit",
+        description: "Allows requesting shared fruit ascension resets.",
       },
       {
         key: "canSaveLimeCopy",
-        label: "Save lime copy",
-        description: "Allows saving local copy of shared lime state.",
+        label: "Save fruit copy",
+        description: "Allows saving a local copy of shared fruit state.",
       },
     ],
   },

@@ -1,6 +1,5 @@
 import {
   Check,
-  Cloud,
   Copy,
   Download,
   FileUp,
@@ -60,6 +59,10 @@ export default function TimelineManagerWindow({
   onDeleteLocalTimeline,
   onOpenExport,
   onOpenImport,
+  onExportMiniGameSaves,
+  onExportMiniGameSave,
+  onImportMiniGameSaves,
+  discoveredMiniGames = [],
   onOpenShareTimeline,
   onEnterExampleMode,
   onExitExampleMode,
@@ -178,7 +181,7 @@ export default function TimelineManagerWindow({
         </Section>
 
         <Section title="Import / Export" subtitle="This is user data management, not an admin-only goblin lever.">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <button
               type="button"
               onClick={onOpenExport}
@@ -203,33 +206,59 @@ export default function TimelineManagerWindow({
               <Share2 className="h-4 w-4" aria-hidden="true" />
               Share Timeline
             </button>
+            <button
+              type="button"
+              onClick={onExportMiniGameSaves}
+              disabled={!discoveredMiniGames.length}
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-lime-300/25 bg-lime-500/15 px-4 py-3 text-sm font-black text-lime-50 transition hover:bg-lime-500/25 focus:outline-none focus:ring-4 focus:ring-lime-300/25 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+              Export Game Saves
+            </button>
+            <button
+              type="button"
+              onClick={onImportMiniGameSaves}
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-amber-300/25 bg-amber-500/15 px-4 py-3 text-sm font-black text-amber-50 transition hover:bg-amber-500/25 focus:outline-none focus:ring-4 focus:ring-amber-300/25"
+            >
+              <FileUp className="h-4 w-4" aria-hidden="true" />
+              Import Game Save
+            </button>
           </div>
+          {discoveredMiniGames.length ? (
+            <div className="mt-3 rounded-2xl border border-lime-300/15 bg-lime-500/10 p-3">
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-lime-100">Discovered Game Saves</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {discoveredMiniGames.map((game) => (
+                  <button
+                    key={game.id}
+                    type="button"
+                    onClick={() => onExportMiniGameSave?.(game.id)}
+                    className="rounded-xl border border-lime-300/25 bg-zinc-950/70 px-3 py-2 text-xs font-black text-lime-50 transition hover:bg-lime-500/15 focus:outline-none focus:ring-4 focus:ring-lime-300/25"
+                  >
+                    Export {game.name} Save
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="mt-3 text-xs text-zinc-400">
+              Game-save export appears after a mini-game is discovered.
+            </p>
+          )}
         </Section>
 
-        <Section title="Shared / Synced Timeline">
-          <button
-            type="button"
-            onClick={() => onSelectSource(SOURCE_TYPES.SYNCED_MOCK)}
-            className={cx(
-              "w-full rounded-2xl border p-3 text-left transition focus:outline-none focus:ring-4 focus:ring-red-300/25",
-              selectedSource === SOURCE_TYPES.SYNCED_MOCK
-                ? "border-red-300/40 bg-red-500/15"
-                : "border-white/12 bg-zinc-900/65 hover:bg-zinc-800",
-            )}
-          >
-            <p className="flex items-center gap-2 text-sm font-black text-white">
-              <Cloud className="h-4 w-4 text-red-100" aria-hidden="true" />
-              Shared Timeline / Real Timeline
-            </p>
+        <Section title="Peer / Mock Status">
+          <div className="rounded-2xl border border-white/12 bg-zinc-900/65 p-3">
+            <p className="text-sm font-black text-white">Backend not connected</p>
             <p className="mt-2 text-xs text-zinc-300">
-              {syncStatus?.label || "Mock sync active"}. Backend not connected. This remains local/static/mock.
+              {syncStatus?.label || "Mock sync active"}. Timeline sharing uses the manual peer session instead of this dead tab.
             </p>
             <p className="mt-1 text-xs text-zinc-400">
               {canEditSharedTimeline
-                ? "Edit access: granted for this mock account."
-                : "Edit access: denied until a mock account with edit permission is active."}
+                ? "Mock edit access is available for this account, but the old mock tab is hidden until it has real purpose."
+                : "Use Share Timeline for live peer sync. No backend, no stuck active tab."}
             </p>
-          </button>
+          </div>
         </Section>
 
         <Section title="Example Timeline">

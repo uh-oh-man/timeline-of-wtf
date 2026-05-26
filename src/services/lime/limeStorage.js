@@ -9,6 +9,25 @@ const DEFAULT_UPGRADES = {
   limePress: 0,
   citrusMotivationalSeminar: 0,
   forbiddenZest: 0,
+  zestGrinder: 0,
+  citrusUnion: 0,
+  limeAssemblyLine: 0,
+  sourStockMarket: 0,
+  peelDimension: 0,
+  recursiveLimePrinter: 0,
+  quantumCitrusTapper: 0,
+  fruitTaxLoophole: 0,
+  orangeNegotiator: 0,
+  orangeButler: 0,
+  lemonExileProtocol: 0,
+  unlockApple: 0,
+};
+
+const DEFAULT_EVENT_MODIFIERS = {
+  lemonsDisabled: false,
+  eggplantsEnabled: false,
+  eggplantSpawnChanceBonus: 0,
+  autoClickersDisabledUntil: null,
 };
 
 function canUseStorage() {
@@ -27,6 +46,10 @@ export function createDefaultLimeState() {
     totalLimesEarned: 0,
     totalClicks: 0,
     upgrades: { ...DEFAULT_UPGRADES },
+    eventModifiers: { ...DEFAULT_EVENT_MODIFIERS },
+    ascensionLevel: 0,
+    totalAscensions: 0,
+    lastAscendedAt: null,
     lastUpdatedAt: now,
     createdAt: now,
     updatedAt: now,
@@ -60,6 +83,13 @@ export function normalizeLimeState(state) {
       ...DEFAULT_UPGRADES,
       ...(source.upgrades && typeof source.upgrades === "object" ? source.upgrades : {}),
     },
+    eventModifiers: {
+      ...DEFAULT_EVENT_MODIFIERS,
+      ...(source.eventModifiers && typeof source.eventModifiers === "object" ? source.eventModifiers : {}),
+    },
+    ascensionLevel: normalizeNumber(source.ascensionLevel, 0),
+    totalAscensions: normalizeNumber(source.totalAscensions, 0),
+    lastAscendedAt: source.lastAscendedAt || null,
     lastUpdatedAt: source.lastUpdatedAt || defaults.lastUpdatedAt,
     createdAt: source.createdAt || defaults.createdAt,
     updatedAt: source.updatedAt || defaults.updatedAt,
